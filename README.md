@@ -1,18 +1,6 @@
 # Alphabet Soup
 
-A logic puzzle game for Android inspired by Sudoku. Fill an N×N grid with letters so that every row, column, and diagonal contains each letter exactly once — plus exactly one empty cell.
-
-## How It Works
-
-Clues are shown around the edges of the grid. Each clue reveals the **first visible letter** seen from that direction (empty cells are skipped). Use the clues and logical deduction to reconstruct the full grid.
-
-The game offers five grid sizes: **4×4**, **5×5**, **6×6**, **7×7**, and **8×8**.
-
-Additional features:
-- **Pencil mode** — note candidate letters in a cell without committing
-- **Undo** — step back through your moves
-- **Timer** — track how long each puzzle takes you
-- **Share** — brag about your solve time when you finish
+A logic puzzle game for Android that is all about letters. Fill an N×N grid with letters so that every row, column, and diagonal contains each letter exactly once — plus exactly one empty cell. Clues are shown around the edges of the grid. Each clue reveals the **first visible letter** seen from that direction (empty cells are skipped). Use the clues and logical deduction to reconstruct the full grid.
 
 ## Requirements
 
@@ -44,34 +32,13 @@ Select your target device or emulator and click **Run** (or press `Shift+F10`).
 ```
 This builds a debug APK and installs it on a connected device or running emulator.
 
-## Running Tests
+## Issues
 
-**Unit tests** (run on your development machine):
-```bash
-./gradlew test
-```
-
-**Instrumented tests** (run on a connected device or emulator):
-```bash
-./gradlew connectedAndroidTest
-```
-
-## Bug Reports
-
-Found a bug? Please [open an issue](https://github.com/sfluegel05/alphabet-soup/issues) and include:
-- A description of what happened and what you expected
-- Steps to reproduce the problem
-- Your Android version and device model
+If you find bugs or have any requests, please [open an issue](https://github.com/sfluegel05/alphabet-soup/issues).
 
 ## Contributing
 
-Contributions are welcome! To get started:
-
-1. Fork the repository and create a branch for your change.
-2. Make your changes, following the existing code style (Kotlin + Jetpack Compose).
-3. Add or update tests where appropriate.
-4. Open a pull request with a clear description of what you changed and why.
-
+Feel free to contribute to this repository by [opening a PR](https://github.com/sfluegel05/alphabet-soup/pull).
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
