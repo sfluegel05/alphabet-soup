@@ -41,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -51,6 +52,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
+const val EMPTY_CELL_SYMBOL = "/"
+
 // ── Screen entry point ────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,6 +63,30 @@ fun GameScreen(size: Int, onBack: () -> Unit) {
 
     var elapsedSeconds by remember { mutableStateOf(0L) }
     var timerActive    by remember { mutableStateOf(false) }
+    var showHelp       by remember { mutableStateOf(false) }
+
+    if (showHelp) {
+        val lastLetter = 'A' + size - 2
+        AlertDialog(
+            onDismissRequest = { showHelp = false },
+            title = { Text("How to play") },
+            text  = {
+                Text(
+                    "Fill the ${size}×${size} grid with the letters A–$lastLetter.\n\n" +
+                    "Every row, column, and both diagonals must contain each letter " +
+                    "exactly once — plus exactly one empty cell.\n\n" +
+                    "The hints around the grid show the first letter visible when " +
+                    "looking in from that side. If the nearest cell is empty, the " +
+                    "hint shows the letter behind it.\n\n" +
+                    "Tap a cell to select it, then pick a value below the grid. " +
+                    "Use pencil mode to note down possibilities without committing."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showHelp = false }) { Text("Got it") }
+            }
+        )
+    }
 
     LaunchedEffect(size) {
         val state = withContext(Dispatchers.Default) {
@@ -89,6 +116,13 @@ fun GameScreen(size: Int, onBack: () -> Unit) {
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showHelp = true }) {
+                        Text(
+                            text  = "?",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     Text(
                         text     = "%d:%02d".format(elapsedSeconds / 60, elapsedSeconds % 60),
                         style    = MaterialTheme.typography.titleMedium,
@@ -149,7 +183,7 @@ private fun PuzzleBoard(
     var pencilMode   by remember { mutableStateOf(false) }
     var selectedCell by remember { mutableStateOf<Int?>(null) }  // flat index
 
-    // Values shown in the picker (○ first, then letters A…)
+    // Values shown in the picker (EMPTY_CELL_SYMBOL first, then letters A…)
     val allCandidates = remember(size) { listOf(CELL_EMPTY) + (1 until size).toList() }
 
     // ── Undo history ───────────────────────────────────────────────────────
@@ -212,12 +246,12 @@ private fun PuzzleBoard(
         val seconds = elapsedSeconds % 60
 
         fun shareBrag() {
-            var msg = "I have devoured a whole bowl of Alphabet Soup - and it only took me"
+            var msg = "I have devoured a whole bowl of Alphabet Soup ($size x $size) - and it only took me"
             msg += if (minutes == 0L) {
                 // Special case for sub-1-minute times: "only 45 seconds!"
-                "$seconds seconds! Can you do better?"
+                " $seconds seconds! Can you do better?"
             } else {
-                "$minutes minutes and $seconds seconds! Can you do better?"
+                " $minutes minutes and $seconds seconds! Can you do better?"
             }
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
@@ -231,16 +265,13 @@ private fun PuzzleBoard(
             title = { Text("Delicious!") },
             text  = {
                 Text(
-                    "Congratulations — you managed to solve the puzzle!\n\n" +
+                    "You managed to find all the letters and make them your dinner!\n\n" +
                     "Your time: ${minutes}m ${seconds}s"
                 )
             },
             confirmButton = {
                 TextButton(onClick = { shareBrag() }) { Text("Brag about this") }
                 TextButton(onClick = onBack)           { Text("Back to Menu") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSolvedDialog = false }) { Text("Admire the Soup") }
             }
         )
     }
@@ -271,6 +302,7 @@ private fun PuzzleBoard(
                                 cellSize   = cellSize,
                                 marks      = pencilMarks[idx],
                                 isSelected = selectedCell == idx,
+                                onDiagonal = r == c || r + c == size - 1,
                                 gameState  = gameState,
                                 onClick    = { tap(r, c) }
                             )
@@ -288,14 +320,36 @@ private fun PuzzleBoard(
 
         Spacer(Modifier.height(16.dp))
 
-        // ── Letter legend ──────────────────────────────────────────────────
-        Text(
-            text  = "Letters: " + (1 until size).joinToString(" ") { gameState.letterChar(it).toString() },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(Modifier.height(12.dp))
+        // ── Value picker ─────────────
+        // Normal mode: chips commit/clear the cell's value (one active at most).
+        // Pencil mode: chips toggle candidates (multiple may be active).
+        val sel = selectedCell
+        Spacer(Modifier.height(6.dp))
+        FlowRow(
+            modifier              = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+            verticalArrangement   = Arrangement.spacedBy(6.dp)
+        ) {
+            allCandidates.forEach { candidate ->
+                val isSelected = if (sel != null && pencilMode) candidate in pencilMarks[sel]
+                                 else if (sel != null)          cells[sel] == candidate
+                                 else                           false
+                FilterChip(
+                    selected = isSelected,
+                    onClick  = {
+                        if (pencilMode) toggleCandidate(candidate)
+                        else            commitValue(candidate)
+                    },
+                    label = {
+                        Text(
+                            if (candidate == CELL_EMPTY) EMPTY_CELL_SYMBOL
+                            else gameState.letterChar(candidate).toString()
+                        )
+                    },
+                    enabled = sel != null
+                )
+            }
+        }
 
         // ── Controls row: undo + pencil toggle ────────────────────────────
         Row(
@@ -309,49 +363,9 @@ private fun PuzzleBoard(
 
             FilterChip(
                 selected = pencilMode,
-                onClick  = {
-                    pencilMode = !pencilMode
-                    selectedCell = null       // clear selection when switching modes
-                },
+                onClick  = { pencilMode = !pencilMode },
                 label = { Text(if (pencilMode) "Pencil mode: ON" else "Pencil mode: OFF") }
             )
-        }
-
-        // ── Value picker (shown whenever any cell is selected) ─────────────
-        // Normal mode: chips commit/clear the cell's value (one active at most).
-        // Pencil mode: chips toggle candidates (multiple may be active).
-        val sel = selectedCell
-        if (sel != null) {
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text  = if (pencilMode) "Mark candidates:" else "Enter value:",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(6.dp))
-            FlowRow(
-                modifier              = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
-                verticalArrangement   = Arrangement.spacedBy(6.dp)
-            ) {
-                allCandidates.forEach { candidate ->
-                    val isSelected = if (pencilMode) candidate in pencilMarks[sel]
-                                     else            cells[sel] == candidate
-                    FilterChip(
-                        selected = isSelected,
-                        onClick  = {
-                            if (pencilMode) toggleCandidate(candidate)
-                            else            commitValue(candidate)
-                        },
-                        label = {
-                            Text(
-                                if (candidate == CELL_EMPTY) "○"
-                                else gameState.letterChar(candidate).toString()
-                            )
-                        }
-                    )
-                }
-            }
         }
     }
 }
@@ -382,14 +396,17 @@ private fun GridCell(
     cellSize: Dp,
     marks: Set<Int>,
     isSelected: Boolean,
+    onDiagonal: Boolean,
     gameState: GameState,
     onClick: () -> Unit
 ) {
-    val bgColor = when (value) {
+    val baseColor = when (value) {
         CELL_UNSET -> MaterialTheme.colorScheme.surface
         CELL_EMPTY -> MaterialTheme.colorScheme.surfaceVariant
         else       -> MaterialTheme.colorScheme.primaryContainer
     }
+    val diagTint = MaterialTheme.colorScheme.tertiary
+    val bgColor  = if (onDiagonal) lerp(baseColor, diagTint, 0.12f) else baseColor
     val borderColor = if (isSelected) MaterialTheme.colorScheme.primary
                       else            MaterialTheme.colorScheme.outline
     val borderWidth = if (isSelected) 2.dp else 1.dp
@@ -412,7 +429,7 @@ private fun GridCell(
             value == CELL_UNSET -> { /* blank – awaiting input */ }
 
             value == CELL_EMPTY -> Text(
-                text     = "·",
+                text     = EMPTY_CELL_SYMBOL,
                 fontSize = (cellSize.value * 0.50f).sp,
                 color    = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -432,7 +449,7 @@ private fun GridCell(
 @Composable
 private fun PencilMarksContent(marks: Set<Int>, size: Int, cellSize: Dp, gameState: GameState) {
     // All N candidates occupy fixed slots so a mark's position never shifts.
-    // Candidates: ○ (CELL_EMPTY) followed by letters A, B, …
+    // Candidates: EMPTY_CELL_SYMBOL (CELL_EMPTY) followed by letters A, B, …
     val cols       = when { size <= 4 -> 2; size <= 7 -> 3; else -> 4 }
     val candidates = listOf(CELL_EMPTY) + (1 until size).toList()
     val fontSize   = (cellSize.value * 0.22f).sp
@@ -449,7 +466,7 @@ private fun PencilMarksContent(marks: Set<Int>, size: Int, cellSize: Dp, gameSta
                 rowCands.forEach { cand ->
                     Text(
                         text       = if (cand in marks) {
-                            if (cand == CELL_EMPTY) "○" else gameState.letterChar(cand).toString()
+                            if (cand == CELL_EMPTY) EMPTY_CELL_SYMBOL else gameState.letterChar(cand).toString()
                         } else "",
                         fontSize   = fontSize,
                         fontWeight = FontWeight.Medium,
