@@ -29,8 +29,13 @@ class MainActivity : ComponentActivity() {
                 when (val s = screen) {
                     is Screen.Welcome -> Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                         WelcomeScreen(
-                            modifier = Modifier.padding(innerPadding),
-                            onSizeSelected = { size -> screen = Screen.Game(size) }
+                            modifier      = Modifier.padding(innerPadding),
+                            resumableGame = GameSave.getLastSaved(),
+                            onResume      = { screen = Screen.Game(GameSave.getLastSaved()!!.size) },
+                            onNewGame     = { size ->
+                                GameSave.clear(size)   // discard any existing save for this size
+                                screen = Screen.Game(size)
+                            }
                         )
                     }
                     is Screen.Game -> GameScreen(

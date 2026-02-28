@@ -40,3 +40,30 @@ class GameState(
     /** Convert a letter index (1..size-1) to its display character. */
     fun letterChar(index: Int): Char = 'A' + (index - 1)
 }
+
+/** Snapshot of an in-progress game that can be restored later. */
+data class SavedGame(
+    val size: Int,
+    val gameState: GameState,
+    val cells: List<Int>,
+    val pencilMarks: List<Set<Int>>,
+    val elapsedSeconds: Long,
+    val history: List<List<Int>>
+)
+
+/** In-memory save slots, one per grid size. Tracks the most-recently saved slot. */
+object GameSave {
+    private val saves    = HashMap<Int, SavedGame>()
+    private var lastSize: Int? = null
+
+    fun put(game: SavedGame) {
+        saves[game.size] = game
+        lastSize = game.size
+    }
+    fun get(size: Int): SavedGame?  = saves[size]
+    fun getLastSaved(): SavedGame?  = lastSize?.let { saves[it] }
+    fun clear(size: Int) {
+        saves.remove(size)
+        if (lastSize == size) lastSize = null
+    }
+}

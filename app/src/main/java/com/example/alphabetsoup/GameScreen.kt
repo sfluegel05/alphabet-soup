@@ -33,6 +33,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -54,6 +55,15 @@ import kotlinx.coroutines.withContext
 
 const val EMPTY_CELL_SYMBOL = "/"
 
+// ── Mutable bridge written by PuzzleBoard, read by GameScreen on back ─────────
+
+private class GameProgress(
+    var cells: List<Int>            = emptyList(),
+    var pencilMarks: List<Set<Int>> = emptyList(),
+    var history: List<List<Int>>    = emptyList(),
+    var isSolved: Boolean           = false
+)
+
 // ── Screen entry point ────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,6 +74,10 @@ fun GameScreen(size: Int, onBack: () -> Unit) {
     var elapsedSeconds by remember { mutableStateOf(0L) }
     var timerActive    by remember { mutableStateOf(false) }
     var showHelp       by remember { mutableStateOf(false) }
+
+    // Bridge object: PuzzleBoard writes its state here every recomposition so
+    // GameScreen can persist it when the user navigates back.
+    val progress = remember { GameProgress() }
 
     if (showHelp) {
         val lastLetter = 'A' + size - 2
@@ -89,11 +103,22 @@ fun GameScreen(size: Int, onBack: () -> Unit) {
     }
 
     LaunchedEffect(size) {
-        val state = withContext(Dispatchers.Default) {
-            PuzzleGenerator.generateGame(size)
+        val saved = GameSave.get(size)
+        if (saved != null) {
+            // Restore an in-progress game.
+            progress.cells        = saved.cells
+            progress.pencilMarks  = saved.pencilMarks
+            progress.history      = saved.history
+            elapsedSeconds        = saved.elapsedSeconds
+            gameState             = saved.gameState
+        } else {
+            // Generate a fresh puzzle.
+            val state = withContext(Dispatchers.Default) {
+                PuzzleGenerator.generateGame(size)
+            }
+            gameState = state
         }
-        gameState = state
-        timerActive = true          // start counting once the puzzle is on screen
+        timerActive = true
     }
 
     // Tick once per second; cancels and restarts when timerActive changes.
@@ -111,7 +136,22 @@ fun GameScreen(size: Int, onBack: () -> Unit) {
             TopAppBar(
                 title = { Text("Alphabet Soup – ${size}×${size}") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        val gs = gameState
+                        if (gs != null && !progress.isSolved) {
+                            GameSave.put(
+                                SavedGame(
+                                    size           = size,
+                                    gameState      = gs,
+                                    cells          = progress.cells,
+                                    pencilMarks    = progress.pencilMarks,
+                                    elapsedSeconds = elapsedSeconds,
+                                    history        = progress.history
+                                )
+                            )
+                        }
+                        onBack()
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -144,6 +184,7 @@ fun GameScreen(size: Int, onBack: () -> Unit) {
                 gameState      = state,
                 modifier       = Modifier.padding(innerPadding),
                 elapsedSeconds = elapsedSeconds,
+                progress       = progress,
                 onSolved       = { timerActive = false },
                 onBack         = onBack
             )
@@ -159,6 +200,7 @@ private fun PuzzleBoard(
     gameState: GameState,
     modifier: Modifier,
     elapsedSeconds: Long,
+    progress: GameProgress,
     onSolved: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -166,18 +208,18 @@ private fun PuzzleBoard(
     val context = LocalContext.current
 
     // Flat list: index = r * size + c; values: CELL_UNSET / CELL_EMPTY / 1..N-1
+    // Restored from progress when available (i.e. returning to a saved game).
     val cells = remember(gameState) {
-        mutableStateListOf(*Array(size * size) { CELL_UNSET })
+        val initial = if (progress.cells.size == size * size) progress.cells
+                      else List(size * size) { CELL_UNSET }
+        mutableStateListOf(*initial.toTypedArray())
     }
 
     // Pencil marks: one Set<Int> per cell.
-    // Holds candidate values the player isn't sure about yet:
-    //   CELL_EMPTY (0) = "maybe this cell is the empty one"
-    //   1..N-1         = "maybe this letter goes here"
-    // Contents are preserved even when a cell gets a committed value,
-    // but only displayed while the cell is still CELL_UNSET.
     val pencilMarks = remember(gameState) {
-        mutableStateListOf(*Array<Set<Int>>(size * size) { emptySet() })
+        val initial = if (progress.pencilMarks.size == size * size) progress.pencilMarks
+                      else List<Set<Int>>(size * size) { emptySet() }
+        mutableStateListOf(*initial.toTypedArray())
     }
 
     var pencilMode   by remember { mutableStateOf(false) }
@@ -188,7 +230,11 @@ private fun PuzzleBoard(
 
     // ── Undo history ───────────────────────────────────────────────────────
     // Each entry is a snapshot of cells taken before a commit/clear action.
-    val history = remember(gameState) { ArrayDeque<List<Int>>() }
+    val history = remember(gameState) {
+        val deque = ArrayDeque<List<Int>>()
+        progress.history.forEach { deque.addLast(it) }
+        deque
+    }
 
     fun saveSnapshot() { history.addLast(cells.toList()) }
     fun undo() {
@@ -231,11 +277,20 @@ private fun PuzzleBoard(
         }
     }
 
+    // Keep the progress bridge in sync so GameScreen can persist it on back.
+    SideEffect {
+        progress.cells       = cells.toList()
+        progress.pencilMarks = pencilMarks.toList()
+        progress.history     = history.toList()
+        progress.isSolved    = isSolved
+    }
+
     var showSolvedDialog by remember { mutableStateOf(false) }
 
     // Stop the timer the instant the puzzle is solved, then show the dialog.
     LaunchedEffect(isSolved) {
         if (isSolved) {
+            GameSave.clear(gameState.size)   // no need to resume a finished game
             onSolved()
             showSolvedDialog = true
         }

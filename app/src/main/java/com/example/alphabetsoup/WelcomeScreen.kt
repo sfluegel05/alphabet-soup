@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -23,7 +25,12 @@ import androidx.compose.ui.unit.sp
 import com.example.alphabetsoup.ui.theme.AlphabetSoupTheme
 
 @Composable
-fun WelcomeScreen(onSizeSelected: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun WelcomeScreen(
+    resumableGame: SavedGame?,
+    onResume: () -> Unit,
+    onNewGame: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -50,8 +57,31 @@ fun WelcomeScreen(onSizeSelected: (Int) -> Unit, modifier: Modifier = Modifier) 
 
         Spacer(modifier = Modifier.height(48.dp))
 
+        // ── Resume button (only shown when there's an in-progress game) ───────
+        if (resumableGame != null) {
+            val s = resumableGame.size
+            val mins = resumableGame.elapsedSeconds / 60
+            val secs = resumableGame.elapsedSeconds % 60
+            Button(
+                onClick  = onResume,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text     = "Resume ${s}×${s}  (%d:%02d)".format(mins, secs),
+                    fontSize = 16.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            HorizontalDivider()
+
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+
+        // ── New-game size picker ──────────────────────────────────────────────
         Text(
-            text = "Choose a grid size to start:",
+            text = "Start a new game:",
             fontSize = 18.sp,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface
@@ -64,7 +94,7 @@ fun WelcomeScreen(onSizeSelected: (Int) -> Unit, modifier: Modifier = Modifier) 
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
         ) {
             for (size in 4..6) {
-                SizeButton(size = size, onClick = { onSizeSelected(size) })
+                SizeButton(size = size, onClick = { onNewGame(size) })
             }
         }
 
@@ -75,7 +105,7 @@ fun WelcomeScreen(onSizeSelected: (Int) -> Unit, modifier: Modifier = Modifier) 
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
         ) {
             for (size in 7..8) {
-        SizeButton(size = size, onClick = { onSizeSelected(size) })
+                SizeButton(size = size, onClick = { onNewGame(size) })
             }
         }
     }
@@ -83,8 +113,8 @@ fun WelcomeScreen(onSizeSelected: (Int) -> Unit, modifier: Modifier = Modifier) 
 
 @Composable
 private fun SizeButton(size: Int, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
+    OutlinedButton(
+        onClick  = onClick,
         modifier = Modifier.width(80.dp)
     ) {
         Text(text = "${size}×${size}", fontSize = 16.sp)
@@ -95,6 +125,6 @@ private fun SizeButton(size: Int, onClick: () -> Unit) {
 @Composable
 fun WelcomeScreenPreview() {
     AlphabetSoupTheme {
-        WelcomeScreen(onSizeSelected = {})
+        WelcomeScreen(resumableGame = null, onResume = {}, onNewGame = {})
     }
 }
