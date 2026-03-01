@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,8 +21,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -68,7 +77,7 @@ private class GameProgress(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GameScreen(size: Int, onBack: () -> Unit) {
+fun GameScreen(size: Int, difficulty: Difficulty, onBack: () -> Unit) {
     var gameState by remember { mutableStateOf<GameState?>(null) }
 
     var elapsedSeconds by remember { mutableStateOf(0L) }
@@ -114,7 +123,7 @@ fun GameScreen(size: Int, onBack: () -> Unit) {
         } else {
             // Generate a fresh puzzle.
             val state = withContext(Dispatchers.Default) {
-                PuzzleGenerator.generateGame(size)
+                PuzzleGenerator.generateGame(size, difficulty)
             }
             gameState = state
         }
@@ -142,6 +151,7 @@ fun GameScreen(size: Int, onBack: () -> Unit) {
                             GameSave.put(
                                 SavedGame(
                                     size           = size,
+                                    difficulty     = difficulty,
                                     gameState      = gs,
                                     cells          = progress.cells,
                                     pencilMarks    = progress.pencilMarks,
@@ -175,13 +185,14 @@ fun GameScreen(size: Int, onBack: () -> Unit) {
     ) { innerPadding ->
         val state = gameState
         if (state == null) {
-            Box(
+            Column(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
-                contentAlignment = Alignment.Center
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
-                CircularProgressIndicator()
+                WavyLoadingIndicator()
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
                     text = "Cooking a fresh soup, just for you...",
@@ -197,7 +208,8 @@ fun GameScreen(size: Int, onBack: () -> Unit) {
                 elapsedSeconds = elapsedSeconds,
                 progress       = progress,
                 onSolved       = { timerActive = false },
-                onBack         = onBack
+                onBack         = onBack,
+                difficulty     = difficulty
             )
         }
     }
@@ -213,7 +225,8 @@ private fun PuzzleBoard(
     elapsedSeconds: Long,
     progress: GameProgress,
     onSolved: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    difficulty: Difficulty
 ) {
     val size    = gameState.size
     val context = LocalContext.current
@@ -312,7 +325,7 @@ private fun PuzzleBoard(
         val seconds = elapsedSeconds % 60
 
         fun shareBrag() {
-            var msg = "I have devoured a whole bowl of Alphabet Soup ($size x $size) - and it only took me"
+            var msg = "I have devoured a whole bowl of Alphabet Soup ($size x $size, ${difficulty.label}) - and it only took me"
             msg += if (minutes == 0L) {
                 // Special case for sub-1-minute times: "only 45 seconds!"
                 " $seconds seconds! Can you do better?"
@@ -342,15 +355,19 @@ private fun PuzzleBoard(
         )
     }
 
-    Column(
-        modifier = modifier.fillMaxSize().padding(8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        // ── Grid with surrounding hints ────────────────────────────────────
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val cellSize = (maxWidth / (size + 2)).coerceAtMost(56.dp)
+    BoxWithConstraints(modifier = modifier.fillMaxSize().padding(8.dp)) {
+        val isLandscape = maxWidth > maxHeight
 
+        // In landscape the grid gets half the width; height is the full available height.
+        val cellSize = if (isLandscape)
+            minOf(maxWidth / (2 * (size + 2)), maxHeight / (size + 2)).coerceAtMost(56.dp)
+        else
+            (maxWidth / (size + 2)).coerceAtMost(56.dp)
+
+        val sel = selectedCell
+
+        // ── Shared content blocks ─────────────────────────────────────────
+        val grid: @Composable () -> Unit = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Row {
                     Spacer(Modifier.size(cellSize))
@@ -384,53 +401,119 @@ private fun PuzzleBoard(
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-
-        // ── Value picker ─────────────
-        // Normal mode: chips commit/clear the cell's value (one active at most).
-        // Pencil mode: chips toggle candidates (multiple may be active).
-        val sel = selectedCell
-        Spacer(Modifier.height(6.dp))
-        FlowRow(
-            modifier              = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
-            verticalArrangement   = Arrangement.spacedBy(6.dp)
-        ) {
-            allCandidates.forEach { candidate ->
-                val isSelected = if (sel != null && pencilMode) candidate in pencilMarks[sel]
-                                 else if (sel != null)          cells[sel] == candidate
-                                 else                           false
-                FilterChip(
-                    selected = isSelected,
-                    onClick  = {
-                        if (pencilMode) toggleCandidate(candidate)
-                        else            commitValue(candidate)
-                    },
-                    label = {
-                        Text(
-                            if (candidate == CELL_EMPTY) EMPTY_CELL_SYMBOL
-                            else gameState.letterChar(candidate).toString()
+        val controls: @Composable () -> Unit = {
+            Column(
+                modifier            = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // ── Value picker ───────────────────────────────────────────
+                FlowRow(
+                    modifier              = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                    verticalArrangement   = Arrangement.spacedBy(6.dp)
+                ) {
+                    allCandidates.forEach { candidate ->
+                        val isSelected = if (sel != null && pencilMode) candidate in pencilMarks[sel]
+                                         else if (sel != null)          cells[sel] == candidate
+                                         else                           false
+                        FilterChip(
+                            selected = isSelected,
+                            onClick  = {
+                                if (pencilMode) toggleCandidate(candidate)
+                                else            commitValue(candidate)
+                            },
+                            label = {
+                                Text(
+                                    if (candidate == CELL_EMPTY) EMPTY_CELL_SYMBOL
+                                    else gameState.letterChar(candidate).toString()
+                                )
+                            },
+                            enabled = sel != null
                         )
-                    },
-                    enabled = sel != null
-                )
+                    }
+                }
+                // ── Controls row: undo + pencil toggle ────────────────────
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment     = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick  = { undo() },
+                        enabled  = history.isNotEmpty()
+                    ) { Text("Undo") }
+
+                    FilterChip(
+                        selected = pencilMode,
+                        onClick  = { pencilMode = !pencilMode },
+                        label = { Text(if (pencilMode) "Pencil mode: ON" else "Pencil mode: OFF") }
+                    )
+                }
             }
         }
 
-        // ── Controls row: undo + pencil toggle ────────────────────────────
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment     = Alignment.CenterVertically
-        ) {
-            TextButton(
-                onClick  = { undo() },
-                enabled  = history.isNotEmpty()
-            ) { Text("Undo") }
+        // ── Orientation-aware layout ──────────────────────────────────────
+        if (isLandscape) {
+            Row(
+                modifier             = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment    = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier         = Modifier.weight(1f).fillMaxHeight(),
+                    contentAlignment = Alignment.Center
+                ) { grid() }
+                Box(
+                    modifier         = Modifier.weight(1f).fillMaxHeight(),
+                    contentAlignment = Alignment.Center
+                ) { controls() }
+            }
+        } else {
+            Column(
+                modifier            = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                grid()
+                Spacer(Modifier.height(16.dp))
+                controls()
+            }
+        }
+    }
+}
 
-            FilterChip(
-                selected = pencilMode,
-                onClick  = { pencilMode = !pencilMode },
-                label = { Text(if (pencilMode) "Pencil mode: ON" else "Pencil mode: OFF") }
+// ── Wavy loading indicator ────────────────────────────────────────────────────
+
+@Composable
+private fun WavyLoadingIndicator(dotCount: Int = 5) {
+    val transition = rememberInfiniteTransition(label = "wavy")
+    val color = MaterialTheme.colorScheme.primary
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.height(40.dp)
+    ) {
+        repeat(dotCount) { index ->
+            val offsetY by transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 0f,
+                animationSpec = infiniteRepeatable(
+                    animation = keyframes {
+                        durationMillis = 900
+                        0f at 0 using FastOutSlowInEasing
+                        -18f at 250 using FastOutSlowInEasing
+                        0f at 500
+                        // stays at 0 from 500–900 (rest between bounces)
+                    },
+                    repeatMode = RepeatMode.Restart,
+                    initialStartOffset = StartOffset(index * 120)
+                ),
+                label = "dot_$index"
+            )
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .offset(y = offsetY.dp)
+                    .background(color, CircleShape)
             )
         }
     }

@@ -12,8 +12,9 @@ object PuzzleGenerator {
      *  1. Random valid solution (row/col/diagonal uniqueness).
      *  2. Full 4×N hint set.
      *  3. Hints removed one-by-one as long as the solution remains unique.
+     *  4. For easier difficulties, some removed hints are restored.
      */
-    fun generateGame(size: Int, random: Random = Random.Default): GameState {
+    fun generateGame(size: Int, difficulty: Difficulty = Difficulty.Medium, random: Random = Random.Default): GameState {
         var solutionUnique = false
         var fullHints: GameHints
         var solution: Array<IntArray>
@@ -34,10 +35,16 @@ object PuzzleGenerator {
             }
         }
         println("Removing hints...")
-        val reducedHints  = removeHints(size, fullHints, random)
+        val reducedHints = removeHints(size, fullHints, random)
+        val reAddCount = when (difficulty) {
+            Difficulty.Hard   -> 0
+            Difficulty.Medium -> if (size <= 5) 1 else 2
+            Difficulty.Easy   -> if (size <= 5) 2 else if (size == 6) 3 else 4
+        }
+        val finalHints    = reAddHints(fullHints, reducedHints, reAddCount, random)
         val playerGrid    = Array(size) { IntArray(size) { CELL_UNSET } }
         println("Done!")
-        return GameState(size, solution, playerGrid, reducedHints)
+        return GameState(size, solution, playerGrid, finalHints)
     }
 
     // ── 1. Solution generation ────────────────────────────────────────────────
@@ -116,6 +123,39 @@ object PuzzleGenerator {
             }
         }
         return current
+    }
+
+    // ── 4. Hint re-addition (for easier difficulties) ─────────────────────────
+
+    private fun reAddHints(
+        fullHints: GameHints,
+        reducedHints: GameHints,
+        count: Int,
+        random: Random
+    ): GameHints {
+        if (count == 0) return reducedHints
+        val size = fullHints.rowLeft.size
+
+        // Collect positions that were removed (null in reduced, non-null in full).
+        val removedPositions = mutableListOf<HintPos>()
+        for (i in 0 until size) {
+            if (reducedHints.rowLeft[i]   == null && fullHints.rowLeft[i]   != null) removedPositions += HintPos(HintSide.ROW_LEFT,   i)
+            if (reducedHints.rowRight[i]  == null && fullHints.rowRight[i]  != null) removedPositions += HintPos(HintSide.ROW_RIGHT,  i)
+            if (reducedHints.colTop[i]    == null && fullHints.colTop[i]    != null) removedPositions += HintPos(HintSide.COL_TOP,    i)
+            if (reducedHints.colBottom[i] == null && fullHints.colBottom[i] != null) removedPositions += HintPos(HintSide.COL_BOTTOM, i)
+        }
+        removedPositions.shuffle(random)
+
+        val result = GameHints(
+            rowLeft   = reducedHints.rowLeft.copyOf(),
+            rowRight  = reducedHints.rowRight.copyOf(),
+            colTop    = reducedHints.colTop.copyOf(),
+            colBottom = reducedHints.colBottom.copyOf()
+        )
+        for (pos in removedPositions.take(count.coerceAtMost(removedPositions.size))) {
+            result.set(pos, fullHints.get(pos))
+        }
+        return result
     }
 }
 

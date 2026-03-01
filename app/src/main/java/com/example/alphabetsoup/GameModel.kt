@@ -1,5 +1,9 @@
 package com.example.alphabetsoup
 
+enum class Difficulty(val label: String) {
+    Easy("Mild"), Medium("Medium"), Hard("Spicy")
+}
+
 /** A cell that the player has left blank (valid puzzle move). */
 const val CELL_EMPTY = 0
 
@@ -44,6 +48,7 @@ class GameState(
 /** Snapshot of an in-progress game that can be restored later. */
 data class SavedGame(
     val size: Int,
+    val difficulty: Difficulty,
     val gameState: GameState,
     val cells: List<Int>,
     val pencilMarks: List<Set<Int>>,
@@ -55,6 +60,8 @@ data class SavedGame(
 object GameSave {
     private val saves    = HashMap<Int, SavedGame>()
     private var lastSize: Int? = null
+    var lastDifficulty: Difficulty = Difficulty.Medium
+        private set
 
     fun put(game: SavedGame) {
         saves[game.size] = game
@@ -66,4 +73,5 @@ object GameSave {
         saves.remove(size)
         if (lastSize == size) lastSize = null
     }
+    fun recordDifficulty(d: Difficulty) { lastDifficulty = d }
 }

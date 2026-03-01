@@ -1,20 +1,30 @@
 package com.example.alphabetsoup
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -24,20 +34,27 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.alphabetsoup.ui.theme.AlphabetSoupTheme
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WelcomeScreen(
     resumableGame: SavedGame?,
     onResume: () -> Unit,
-    onNewGame: (Int) -> Unit,
+    onNewGame: (Int, Difficulty) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
+    var difficulty by remember { mutableStateOf(GameSave.lastDifficulty) }
+
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val minHeight = maxHeight
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = minHeight)
+                .verticalScroll(rememberScrollState())
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
         Text(
             text = "Alphabet Soup",
             fontSize = 48.sp,
@@ -67,7 +84,7 @@ fun WelcomeScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text     = "Resume ${s}×${s}  (%d:%02d)".format(mins, secs),
+                    text     = "Resume ${s}×${s}  ·  ${resumableGame.difficulty.label}  ·  (%d:%02d)".format(mins, secs),
                     fontSize = 16.sp
                 )
             }
@@ -76,8 +93,9 @@ fun WelcomeScreen(
 
             HorizontalDivider()
 
-            Spacer(modifier = Modifier.height(24.dp))
         }
+
+        Spacer(modifier = Modifier.height(24.dp))
 
         // ── New-game size picker ──────────────────────────────────────────────
         Text(
@@ -87,14 +105,14 @@ fun WelcomeScreen(
             color = MaterialTheme.colorScheme.onSurface
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
         ) {
             for (size in 4..6) {
-                SizeButton(size = size, onClick = { onNewGame(size) })
+                SizeButton(size = size, onClick = { onNewGame(size, difficulty) })
             }
         }
 
@@ -105,10 +123,37 @@ fun WelcomeScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
         ) {
             for (size in 7..8) {
-                SizeButton(size = size, onClick = { onNewGame(size) })
+                SizeButton(size = size, onClick = { onNewGame(size, difficulty) })
             }
         }
-    }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // ── Difficulty picker ─────────────────────────────────────────────────
+        Text(
+            text = "Pick a sauce:",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+        ) {
+            Difficulty.entries.forEach { d ->
+                FilterChip(
+                    selected = difficulty == d,
+                    onClick  = { difficulty = d },
+                    label    = { Text(d.label) }
+                )
+            }
+        }
+
+        } // Column
+    } // BoxWithConstraints
 }
 
 @Composable
@@ -125,6 +170,6 @@ private fun SizeButton(size: Int, onClick: () -> Unit) {
 @Composable
 fun WelcomeScreenPreview() {
     AlphabetSoupTheme {
-        WelcomeScreen(resumableGame = null, onResume = {}, onNewGame = {})
+        WelcomeScreen(resumableGame = null, onResume = {}, onNewGame = { _, _ -> })
     }
 }

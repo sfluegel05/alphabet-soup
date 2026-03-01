@@ -16,7 +16,7 @@ import com.example.alphabetsoup.ui.theme.AlphabetSoupTheme
 
 private sealed class Screen {
     object Welcome : Screen()
-    data class Game(val size: Int) : Screen()
+    data class Game(val size: Int, val difficulty: Difficulty) : Screen()
 }
 
 class MainActivity : ComponentActivity() {
@@ -31,16 +31,18 @@ class MainActivity : ComponentActivity() {
                         WelcomeScreen(
                             modifier      = Modifier.padding(innerPadding),
                             resumableGame = GameSave.getLastSaved(),
-                            onResume      = { screen = Screen.Game(GameSave.getLastSaved()!!.size) },
-                            onNewGame     = { size ->
+                            onResume      = { screen = Screen.Game(GameSave.getLastSaved()!!.size, GameSave.getLastSaved()!!.difficulty) },
+                            onNewGame     = { size, difficulty ->
                                 GameSave.clear(size)   // discard any existing save for this size
-                                screen = Screen.Game(size)
+                                GameSave.recordDifficulty(difficulty)
+                                screen = Screen.Game(size, difficulty)
                             }
                         )
                     }
                     is Screen.Game -> GameScreen(
-                        size   = s.size,
-                        onBack = { screen = Screen.Welcome }
+                        size       = s.size,
+                        difficulty = s.difficulty,
+                        onBack     = { screen = Screen.Welcome }
                     )
                 }
             }
