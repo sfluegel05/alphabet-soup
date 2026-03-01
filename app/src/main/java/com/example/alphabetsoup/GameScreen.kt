@@ -178,7 +178,18 @@ fun GameScreen(size: Int, onBack: () -> Unit) {
             Box(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
                 contentAlignment = Alignment.Center
-            ) { CircularProgressIndicator() }
+            ) {
+                CircularProgressIndicator()
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Cooking a fresh soup, just for you...",
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
         } else {
             PuzzleBoard(
                 gameState      = state,

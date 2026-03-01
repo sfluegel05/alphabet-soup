@@ -81,7 +81,7 @@ fun WelcomeScreen(
 
         // ── New-game size picker ──────────────────────────────────────────────
         Text(
-            text = "Start a new game:",
+            text = "Take a seat and grab a bowl:",
             fontSize = 18.sp,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface

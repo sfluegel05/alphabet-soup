@@ -14,10 +14,29 @@ object PuzzleGenerator {
      *  3. Hints removed one-by-one as long as the solution remains unique.
      */
     fun generateGame(size: Int, random: Random = Random.Default): GameState {
-        val solution      = generateSolution(size, random)
-        val fullHints     = calculateHints(size, solution)
+        var solutionUnique = false
+        var fullHints: GameHints
+        var solution: Array<IntArray>
+        println("Generating solution...")
+        solution      = generateSolution(size, random)
+        println("Calculating hints...")
+        fullHints     = calculateHints(size, solution)
+        if (PuzzleSolver.countSolutions(size, fullHints, maxCount = 2) == 1) {
+            solutionUnique = true
+        }
+        while (!solutionUnique) {
+            println("Generating solution...")
+            solution      = generateSolution(size, random)
+            println("Calculating hints...")
+            fullHints     = calculateHints(size, solution)
+            if (PuzzleSolver.countSolutions(size, fullHints, maxCount = 2) == 1) {
+                solutionUnique = true
+            }
+        }
+        println("Removing hints...")
         val reducedHints  = removeHints(size, fullHints, random)
         val playerGrid    = Array(size) { IntArray(size) { CELL_UNSET } }
+        println("Done!")
         return GameState(size, solution, playerGrid, reducedHints)
     }
 
@@ -115,3 +134,27 @@ private fun GameHints.set(pos: HintPos, value: Int?) { when (pos.side) {
     HintSide.COL_TOP    -> colTop[pos.index]    = value
     HintSide.COL_BOTTOM -> colBottom[pos.index] = value
 } }
+
+
+fun main() {
+    val game = PuzzleGenerator.generateGame(8)
+    println("Hints:")
+    for (r in 0 until game.size) {
+        val left  = game.hints.rowLeft[r]?.let { game.letterChar(it) } ?: '.'
+        val right = game.hints.rowRight[r]?.let { game.letterChar(it) } ?: '.'
+        println("  $left . . $right")
+    }
+    for (c in 0 until game.size) {
+        val top    = game.hints.colTop[c]?.let { game.letterChar(it) } ?: '.'
+        val bottom = game.hints.colBottom[c]?.let { game.letterChar(it) } ?: '.'
+        println("  $top   $bottom")
+    }
+    println("Solution:")
+    for (r in 0 until game.size) {
+        for (c in 0 until game.size) {
+            print(game.letterChar(game.solution[r][c]) + " ")
+        }
+        println()
+    }
+
+}
