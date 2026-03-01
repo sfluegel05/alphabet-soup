@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -41,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
@@ -77,7 +76,7 @@ private class GameProgress(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GameScreen(size: Int, difficulty: Difficulty, onBack: () -> Unit) {
+fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSecondHints: Boolean, onBack: () -> Unit) {
     var gameState by remember { mutableStateOf<GameState?>(null) }
 
     var elapsedSeconds by remember { mutableStateOf(0L) }
@@ -88,6 +87,26 @@ fun GameScreen(size: Int, difficulty: Difficulty, onBack: () -> Unit) {
     // GameScreen can persist it when the user navigates back.
     val progress = remember { GameProgress() }
 
+    // Auto-save whenever this composable leaves composition (back nav OR rotation).
+    DisposableEffect(Unit) {
+        onDispose {
+            val gs = gameState
+            if (gs != null && !progress.isSolved) {
+                GameSave.put(SavedGame(
+                    size           = size,
+                    difficulty     = difficulty,
+                    useDiagonals   = useDiagonals,
+                    useSecondHints = useSecondHints,
+                    gameState      = gs,
+                    cells          = progress.cells,
+                    pencilMarks    = progress.pencilMarks,
+                    elapsedSeconds = elapsedSeconds,
+                    history        = progress.history
+                ))
+            }
+        }
+    }
+
     if (showHelp) {
         val lastLetter = 'A' + size - 2
         AlertDialog(
@@ -96,13 +115,15 @@ fun GameScreen(size: Int, difficulty: Difficulty, onBack: () -> Unit) {
             text  = {
                 Text(
                     "Fill the ${size}×${size} grid with the letters A–$lastLetter.\n\n" +
-                    "Every row, column, and both diagonals must contain each letter " +
-                    "exactly once — plus exactly one empty cell.\n\n" +
+                            "Every row and column must contain each letter " +
+                    "exactly once - leaving one cell empty.\n" +
+                            (if (useDiagonals) "Special ingredient: diagonals also contain each letter once.\n\n" else "\n") +
                     "The hints around the grid show the first letter visible when " +
                     "looking in from that side. If the nearest cell is empty, the " +
-                    "hint shows the letter behind it.\n\n" +
+                    "hint shows the letter behind it.\n" +
+                            (if (useSecondHints) "Second helpings: smaller hints show the second visible letter from that direction.\n\n" else "\n") +
                     "Tap a cell to select it, then pick a value below the grid. " +
-                    "Use pencil mode to note down possibilities without committing."
+                    "Use pencil mode to stir the soup."
                 )
             },
             confirmButton = {
@@ -123,7 +144,7 @@ fun GameScreen(size: Int, difficulty: Difficulty, onBack: () -> Unit) {
         } else {
             // Generate a fresh puzzle.
             val state = withContext(Dispatchers.Default) {
-                PuzzleGenerator.generateGame(size, difficulty)
+                PuzzleGenerator.generateGame(size, difficulty, useDiagonals, useSecondHints)
             }
             gameState = state
         }
@@ -152,11 +173,13 @@ fun GameScreen(size: Int, difficulty: Difficulty, onBack: () -> Unit) {
                                 SavedGame(
                                     size           = size,
                                     difficulty     = difficulty,
+                                    useDiagonals   = useDiagonals,
                                     gameState      = gs,
                                     cells          = progress.cells,
                                     pencilMarks    = progress.pencilMarks,
                                     elapsedSeconds = elapsedSeconds,
-                                    history        = progress.history
+                                    history        = progress.history,
+                                    useSecondHints = useSecondHints
                                 )
                             )
                         }
@@ -217,7 +240,7 @@ fun GameScreen(size: Int, difficulty: Difficulty, onBack: () -> Unit) {
 
 // ── Puzzle board with player interaction ─────────────────────────────────────
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PuzzleBoard(
     gameState: GameState,
@@ -371,12 +394,12 @@ private fun PuzzleBoard(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Row {
                     Spacer(Modifier.size(cellSize))
-                    for (c in 0 until size) HintCell(gameState.hints.colTop[c], gameState, cellSize)
+                    for (c in 0 until size) HintCell(gameState.hints.colTop[c], gameState.secondHints.colTop[c], gameState, cellSize)
                     Spacer(Modifier.size(cellSize))
                 }
                 for (r in 0 until size) {
                     Row {
-                        HintCell(gameState.hints.rowLeft[r], gameState, cellSize)
+                        HintCell(gameState.hints.rowLeft[r], gameState.secondHints.rowLeft[r], gameState, cellSize)
                         for (c in 0 until size) {
                             val idx = r * size + c
                             GridCell(
@@ -385,17 +408,17 @@ private fun PuzzleBoard(
                                 cellSize   = cellSize,
                                 marks      = pencilMarks[idx],
                                 isSelected = selectedCell == idx,
-                                onDiagonal = r == c || r + c == size - 1,
+                                onDiagonal = gameState.useDiagonals && (r == c || r + c == size - 1),
                                 gameState  = gameState,
                                 onClick    = { tap(r, c) }
                             )
                         }
-                        HintCell(gameState.hints.rowRight[r], gameState, cellSize)
+                        HintCell(gameState.hints.rowRight[r], gameState.secondHints.rowRight[r], gameState, cellSize)
                     }
                 }
                 Row {
                     Spacer(Modifier.size(cellSize))
-                    for (c in 0 until size) HintCell(gameState.hints.colBottom[c], gameState, cellSize)
+                    for (c in 0 until size) HintCell(gameState.hints.colBottom[c], gameState.secondHints.colBottom[c], gameState, cellSize)
                     Spacer(Modifier.size(cellSize))
                 }
             }
@@ -407,29 +430,33 @@ private fun PuzzleBoard(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // ── Value picker ───────────────────────────────────────────
-                FlowRow(
-                    modifier              = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
-                    verticalArrangement   = Arrangement.spacedBy(6.dp)
-                ) {
-                    allCandidates.forEach { candidate ->
-                        val isSelected = if (sel != null && pencilMode) candidate in pencilMarks[sel]
-                                         else if (sel != null)          cells[sel] == candidate
-                                         else                           false
-                        FilterChip(
-                            selected = isSelected,
-                            onClick  = {
-                                if (pencilMode) toggleCandidate(candidate)
-                                else            commitValue(candidate)
-                            },
-                            label = {
-                                Text(
-                                    if (candidate == CELL_EMPTY) EMPTY_CELL_SYMBOL
-                                    else gameState.letterChar(candidate).toString()
-                                )
-                            },
-                            enabled = sel != null
-                        )
+                val half = (allCandidates.size + 1) / 2
+                val pickerRows = if (size > 5) listOf(allCandidates.take(half), allCandidates.drop(half))
+                                 else          listOf(allCandidates)
+                pickerRows.forEach { rowCandidates ->
+                    Row(
+                        modifier              = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
+                    ) {
+                        rowCandidates.forEach { candidate ->
+                            val isSelected = if (sel != null && pencilMode) candidate in pencilMarks[sel]
+                                             else if (sel != null)          cells[sel] == candidate
+                                             else                           false
+                            FilterChip(
+                                selected = isSelected,
+                                onClick  = {
+                                    if (pencilMode) toggleCandidate(candidate)
+                                    else            commitValue(candidate)
+                                },
+                                label = {
+                                    Text(
+                                        if (candidate == CELL_EMPTY) EMPTY_CELL_SYMBOL
+                                        else gameState.letterChar(candidate).toString()
+                                    )
+                                },
+                                enabled = sel != null
+                            )
+                        }
                     }
                 }
                 // ── Controls row: undo + pencil toggle ────────────────────
@@ -456,11 +483,11 @@ private fun PuzzleBoard(
             Row(
                 modifier             = Modifier.fillMaxSize(),
                 horizontalArrangement = Arrangement.Center,
-                verticalAlignment    = Alignment.CenterVertically
+                verticalAlignment    = Alignment.Top
             ) {
                 Box(
                     modifier         = Modifier.weight(1f).fillMaxHeight(),
-                    contentAlignment = Alignment.Center
+                    contentAlignment = Alignment.TopCenter
                 ) { grid() }
                 Box(
                     modifier         = Modifier.weight(1f).fillMaxHeight(),
@@ -522,18 +549,30 @@ private fun WavyLoadingIndicator(dotCount: Int = 5) {
 // ── Individual cells ──────────────────────────────────────────────────────────
 
 @Composable
-private fun HintCell(hintValue: Int?, gameState: GameState, cellSize: Dp) {
+private fun HintCell(hintValue: Int?, secondHintValue: Int?, gameState: GameState, cellSize: Dp) {
     Box(
         modifier = Modifier.size(cellSize),
         contentAlignment = Alignment.Center
     ) {
-        if (hintValue != null) {
-            Text(
-                text       = gameState.letterChar(hintValue).toString(),
-                fontWeight = FontWeight.Bold,
-                fontSize   = (cellSize.value * 0.40f).sp,
-                color      = MaterialTheme.colorScheme.primary
-            )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            if (hintValue != null) {
+                Text(
+                    text       = gameState.letterChar(hintValue).toString(),
+                    fontWeight = FontWeight.Bold,
+                    fontSize   = (cellSize.value * 0.40f).sp,
+                    color      = MaterialTheme.colorScheme.primary
+                )
+            }
+            if (secondHintValue != null) {
+                Text(
+                    text     = gameState.letterChar(secondHintValue).toString(),
+                    fontSize = (cellSize.value * 0.28f).sp,
+                    color    = MaterialTheme.colorScheme.secondary
+                )
+            }
         }
     }
 }
@@ -601,28 +640,31 @@ private fun PencilMarksContent(marks: Set<Int>, size: Int, cellSize: Dp, gameSta
     // Candidates: EMPTY_CELL_SYMBOL (CELL_EMPTY) followed by letters A, B, …
     val cols       = when { size <= 4 -> 2; size <= 7 -> 3; else -> 4 }
     val candidates = listOf(CELL_EMPTY) + (1 until size).toList()
-    val fontSize   = (cellSize.value * 0.22f).sp
+    val numRows    = (candidates.size + cols - 1) / cols
+    // Size font to the slot; lineHeight = fontSize removes default leading so text
+    // never overflows the slot height and appears clipped.
+    val fontSize   = (minOf(cellSize.value / cols, cellSize.value / numRows) * 0.85f).sp
 
-    Column(
-        modifier            = Modifier.fillMaxSize().padding(1.dp),
-        verticalArrangement = Arrangement.SpaceEvenly
-    ) {
+    Column(modifier = Modifier.fillMaxSize().padding(1.dp)) {
         candidates.chunked(cols).forEach { rowCands ->
-            Row(
-                modifier              = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
+            Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 rowCands.forEach { cand ->
-                    Text(
-                        text       = if (cand in marks) {
-                            if (cand == CELL_EMPTY) EMPTY_CELL_SYMBOL else gameState.letterChar(cand).toString()
-                        } else "",
-                        fontSize   = fontSize,
-                        fontWeight = FontWeight.Medium,
-                        color      = MaterialTheme.colorScheme.primary,
-                        modifier   = Modifier.weight(1f),
-                        textAlign  = TextAlign.Center
-                    )
+                    Box(
+                        modifier         = Modifier.weight(1f).fillMaxHeight(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (cand in marks) {
+                            Text(
+                                text       = if (cand == CELL_EMPTY) EMPTY_CELL_SYMBOL
+                                             else gameState.letterChar(cand).toString(),
+                                fontSize   = fontSize,
+                                lineHeight = fontSize,
+                                fontWeight = FontWeight.Medium,
+                                color      = MaterialTheme.colorScheme.primary,
+                                textAlign  = TextAlign.Center
+                            )
+                        }
+                    }
                 }
                 // Pad last row if it has fewer items than cols
                 repeat(cols - rowCands.size) { Spacer(Modifier.weight(1f)) }

@@ -1,7 +1,7 @@
 package com.example.alphabetsoup
 
 enum class Difficulty(val label: String) {
-    Easy("Mild"), Medium("Medium"), Hard("Spicy")
+    Easy("Mild"), Medium("Regular"), Hard("Spicy")
 }
 
 /** A cell that the player has left blank (valid puzzle move). */
@@ -39,7 +39,14 @@ class GameState(
     val size: Int,
     val solution: Array<IntArray>,
     val playerGrid: Array<IntArray>,
-    val hints: GameHints
+    val hints: GameHints,
+    val useDiagonals: Boolean = true,
+    val secondHints: GameHints = GameHints(
+        rowLeft   = Array(size) { null },
+        rowRight  = Array(size) { null },
+        colTop    = Array(size) { null },
+        colBottom = Array(size) { null }
+    )
 ) {
     /** Convert a letter index (1..size-1) to its display character. */
     fun letterChar(index: Int): Char = 'A' + (index - 1)
@@ -49,6 +56,8 @@ class GameState(
 data class SavedGame(
     val size: Int,
     val difficulty: Difficulty,
+    val useDiagonals: Boolean,
+    val useSecondHints: Boolean,
     val gameState: GameState,
     val cells: List<Int>,
     val pencilMarks: List<Set<Int>>,
@@ -62,6 +71,10 @@ object GameSave {
     private var lastSize: Int? = null
     var lastDifficulty: Difficulty = Difficulty.Medium
         private set
+    var lastUseDiagonals: Boolean = true
+        private set
+    var lastUseSecondHints: Boolean = false
+        private set
 
     fun put(game: SavedGame) {
         saves[game.size] = game
@@ -74,4 +87,6 @@ object GameSave {
         if (lastSize == size) lastSize = null
     }
     fun recordDifficulty(d: Difficulty) { lastDifficulty = d }
+    fun recordUseDiagonals(v: Boolean)   { lastUseDiagonals   = v }
+    fun recordUseSecondHints(v: Boolean) { lastUseSecondHints = v }
 }

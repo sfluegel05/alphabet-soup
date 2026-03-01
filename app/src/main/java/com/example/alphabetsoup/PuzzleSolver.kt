@@ -15,80 +15,88 @@ package com.example.alphabetsoup
  *  • Anti-diagonal (r+c==N-1)     : same.
  *  • Row hints   : first/last visible letter matches hint (when row complete).
  *  • Column hints: first/last visible letter matches hint (when column complete).
+ *  - Second hints  : second / second to last visible letter matches hint (when row complete).
  */
 object PuzzleSolver {
 
-    fun countSolutions(size: Int, hints: GameHints, maxCount: Int = 2): Int {
+    fun countSolutions(size: Int, hints: GameHints, secondHints: GameHints, maxCount: Int = 2, useDiagonals: Boolean = true): Int {
         val grid = Array(size) { IntArray(size) { CELL_UNSET } }
         var count = 0
 
         // ── constraint: value not yet present in the row/col/diagonal ──────────
         fun canPlace(row: Int, col: Int, value: Int): Boolean {
-            for (c in 0 until col)  if (grid[row][c] == value) return false
-            for (r in 0 until row)  if (grid[r][col] == value) return false
-            if (row == col)
-                for (i in 0 until row) if (grid[i][i] == value) return false
-            if (row + col == size - 1)
-                for (i in 0 until row) if (grid[i][size - 1 - i] == value) return false
-            // check if value complies with hints (outermost cell: match hint or empty,
-            // 2nd cell: if outer is empty, match hint)
-            if (col == 0) {
-                val leftHint = hints.rowLeft[row]
-                if (leftHint != null && value != leftHint && value != CELL_EMPTY) return false
+            for (c in 0 until size)  if (c != col && grid[row][c] == value) return false
+            for (r in 0 until size)  if (r != row && grid[r][col] == value) return false
+            if (useDiagonals) {
+                if (row == col)
+                    for (i in 0 until size) if (i != col && grid[i][i] == value) return false
+                if (row + col == size - 1)
+                    for (i in 0 until size) if (i != row && grid[i][size - 1 - i] == value) return false
             }
-            if (col == 1) {
-                val leftHint = hints.rowLeft[row]
-                if (leftHint != null && grid[0][col] == CELL_EMPTY && value != leftHint) return false
+            // check if value complies with hints
+            // sort entered so far for each direction:
+            // primary hint: value must match hint if value is first (all before are explicitly marked as empty)
+            // value must NOT match hint if value third or later or behind another letter
+
+            fun primaryHintValid(hint: Int, posInRow: Int, gridRow: IntArray): Boolean {
+                if (value == CELL_EMPTY) return true
+                return if (value == hint) {
+                    if (posInRow == 0) true
+                    else if (posInRow == 1 && (gridRow[0] == CELL_EMPTY || gridRow[0] == CELL_UNSET)) true
+                    else false
+                } else {
+                    if (posInRow == 0) false
+                    else if (posInRow == 1 && gridRow[0] == CELL_EMPTY) false
+                    else true
+                }
             }
-            if (row == 0) {
-                val topHint = hints.colTop[col]
-                if (topHint != null && value != topHint && value != CELL_EMPTY) return false
+            fun secondaryHintValid(hint: Int, posInRow: Int, gridRow: IntArray): Boolean {
+                if (value == CELL_EMPTY) return true
+                return if (value == hint) {
+                    // matches hint iff it is the second visible letter
+                    // second cell and first not empty, third cell and either first or second empty / unset
+                    if (posInRow == 1 && gridRow[0] != CELL_EMPTY) true
+                    else if (posInRow == 2 && (gridRow[0] == CELL_EMPTY || gridRow[0] == CELL_UNSET || gridRow[1] == CELL_EMPTY || gridRow[1] == CELL_UNSET)) true
+                    else false
+                } else {
+                    if (posInRow == 1 && gridRow[0] != CELL_EMPTY && gridRow[0] != CELL_UNSET) false
+                    else if (posInRow == 2 && (gridRow[0] == CELL_EMPTY || gridRow[1] == CELL_EMPTY)) false
+                    else true
+                }
             }
-            if (row == 1) {
-                val topHint = hints.colTop[col]
-                if (topHint != null && grid[row][0] == CELL_EMPTY && value != topHint) return false
+            data class SingleHint(val hint: Int?, val secondHint: Int?, val posInRow: Int, val gridRow: IntArray)
+
+            val hintsPerDirection: List<SingleHint> = listOf(
+                SingleHint(hints.rowLeft[row], secondHints.rowLeft[row], col, grid[row]),
+                SingleHint(hints.rowRight[row], secondHints.rowRight[row], size - col - 1, grid[row].reversedArray()),
+                SingleHint(hints.colTop[col], secondHints.colTop[col], row, IntArray(size) { r -> grid[r][col] }),
+                SingleHint(hints.colBottom[col], secondHints.colBottom[col], size - row - 1, IntArray(size) { r -> grid[size - 1 - r][col] })
+            )
+            for (p in hintsPerDirection) {
+                if (p.hint != null) {
+                    if (!primaryHintValid(p.hint, p.posInRow, p.gridRow)) return false
+                }
+                if (p.secondHint != null) {
+                    if (!secondaryHintValid(p.secondHint, p.posInRow, p.gridRow)) return false
+                }
             }
-            if (col == size - 1) {
-                val rightHint = hints.rowRight[row]
-                if (rightHint != null && value != rightHint && value != CELL_EMPTY) return false
-            }
-            if (col == size - 2) {
-                val rightHint = hints.rowRight[row]
-                if (rightHint != null && grid[row][size - 1] == CELL_EMPTY && value != rightHint) return false
-            }
-            if (row == size - 1) {
-                val bottomHint = hints.colBottom[col]
-                if (bottomHint != null && value != bottomHint && value != CELL_EMPTY) return false
-            }
-            if (row == size - 2) {
-                val bottomHint = hints.colBottom[col]
-                if (bottomHint != null && grid[size - 1][col] == CELL_EMPTY && value != bottomHint) return false
-            }
+
             return true
         }
 
         // Minimum Remaining Values (MRV) + Forward Checking
+        // initialize remainingValues for each cell as all possible values (0..N-1)
         var remainingValues = Array(size * size) { i ->
             (0 until size).toMutableSet()
         }
+        // only add values that pass canPlace() based on hints
+        for (pos in 0 until size * size) {
+            val row = pos / size
+            val col = pos % size
+            remainingValues[pos].removeIf { value -> !canPlace(row, col, value) }
+        }
 
         fun toIndex(row: Int, col: Int) = row * size + col
-
-        for (rowcol in 0 until size) {
-            // remove impossible values based on hints (outermost cell can only be hint or empty, all other cells (except 2nd) can't be hint)
-            val leftHint = hints.rowLeft[rowcol]
-            remainingValues[toIndex(rowcol, 0)].removeIf { leftHint != null && it != leftHint && it != CELL_EMPTY }
-            for (c in 2 until size) remainingValues[toIndex(rowcol, c)].removeIf { leftHint != null && it == leftHint }
-            val rightHint = hints.rowRight[rowcol]
-            remainingValues[toIndex(rowcol, size - 1)].removeIf { rightHint != null && it != rightHint && it != CELL_EMPTY }
-            for (c in 0 until size - 2) remainingValues[toIndex(rowcol, c)].removeIf { rightHint != null && it == rightHint }
-            val topHint = hints.colTop[rowcol]
-            remainingValues[toIndex(0, rowcol)].removeIf { topHint != null && it != topHint && it != CELL_EMPTY }
-            for (r in 2 until size) remainingValues[toIndex(r, rowcol)].removeIf { topHint != null && it == topHint }
-            val bottomHint = hints.colBottom[rowcol]
-            remainingValues[toIndex(size - 1, rowcol)].removeIf { bottomHint != null && it != bottomHint && it != CELL_EMPTY }
-            for (r in 0 until size - 2) remainingValues[toIndex(r, rowcol)].removeIf { bottomHint != null && it == bottomHint }
-        }
 
         fun selectNext(): Int {
             var minCount = Int.MAX_VALUE
@@ -108,67 +116,23 @@ object PuzzleSolver {
         }
 
         fun forwardCheck(row: Int, col: Int, value: Int) {
-            // remove value from remainingValues of cells in the same row, column, and diagonals
-            for (c in 0 until size)  remainingValues[toIndex(row, c)].remove(value)
-            for (r in 0 until size)  remainingValues[toIndex(r, col)].remove(value)
-            if (row == col)
-                for (i in 0 until size) remainingValues[toIndex(i, i)].remove(value)
-            if (row + col == size - 1)
-                for (i in 0 until size) remainingValues[toIndex(i, size - 1 - i)].remove(value)
-            // update based on hints: if outermost cell is empty, next must match hint
-            if (value == CELL_EMPTY) {
-                if (col == 0) {
-                    val leftHint = hints.rowLeft[row]
-                    if (leftHint != null) {
-                        remainingValues[toIndex(row, col + 1)].removeIf { it != leftHint }
-                    }
+            // remove from remainingValues if we can't place the value there anymore
+            // check this value for all cells in the same row, column, and diagonals
+            // check other values for row / column
+            for (i in 0 until size) {
+                for (v in remainingValues[toIndex(row, i)].toList()) {
+                    if (!canPlace(row, i, v)) remainingValues[toIndex(row, i)].remove(v)
                 }
-                if (col == size - 1) {
-                    val rightHint = hints.rowRight[row]
-                    if (rightHint != null) {
-                        remainingValues[toIndex(row, col - 1)].removeIf { it != rightHint }
-                    }
+                for (v in remainingValues[toIndex(i, col)].toList()) {
+                    if (!canPlace(i, col, v)) remainingValues[toIndex(i, col)].remove(v)
                 }
-                if (row == 0) {
-                    val topHint = hints.colTop[col]
-                    if (topHint != null) {
-                        remainingValues[toIndex(row + 1, col)].removeIf { it != topHint }
-                    }
-                }
-                if (row == size - 1) {
-                    val bottomHint = hints.colBottom[col]
-                    if (bottomHint != null) {
-                        remainingValues[toIndex(row - 1, col)].removeIf { it != bottomHint }
-                    }
-                }
-            }
-            // cells next to outermost cells: if they don't comply with the hint, the outermost
-            // cells must comply with the hint
-            if (col == 1) {
-                val leftHint = hints.rowLeft[row]
-                if (leftHint != null && value != leftHint) {
-                    remainingValues[toIndex(row, 0)].removeIf { it != leftHint }
-                }
-            }
-            if (col == size - 2) {
-                val rightHint = hints.rowRight[row]
-                if (rightHint != null && value != rightHint) {
-                    remainingValues[toIndex(row, size - 1)].removeIf { it != rightHint }
-                }
-            }
-            if (row == 1) {
-                val topHint = hints.colTop[col]
-                if (topHint != null && value != topHint) {
-                    remainingValues[toIndex(0, col)].removeIf { it != topHint }
-                }
-            }
-            if (row == size - 2) {
-                val bottomHint = hints.colBottom[col]
-                if (bottomHint != null && value != bottomHint) {
-                    remainingValues[toIndex(size - 1, col)].removeIf { it != bottomHint }
+                if (useDiagonals) {
+                    if (row == col && !canPlace(i, i, value)) remainingValues[toIndex(i, i)].remove(value)
+                    if (row + col == size - 1 && !canPlace(i, size - 1 - i, value)) remainingValues[toIndex(i, size - 1 - i)].remove(value)
                 }
             }
         }
+
 
         // ── backtracking ────────────────────────────────────────────────────────
         fun backtrack(pos: Int, nFilled: Int): Boolean {

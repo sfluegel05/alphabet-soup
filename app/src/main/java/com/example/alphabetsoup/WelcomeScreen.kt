@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -20,6 +21,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,10 +41,31 @@ import com.example.alphabetsoup.ui.theme.AlphabetSoupTheme
 fun WelcomeScreen(
     resumableGame: SavedGame?,
     onResume: () -> Unit,
-    onNewGame: (Int, Difficulty) -> Unit,
+    onNewGame: (Int, Difficulty, Boolean, Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var difficulty by remember { mutableStateOf(GameSave.lastDifficulty) }
+    var difficulty          by remember { mutableStateOf(GameSave.lastDifficulty) }
+    var useDiagonals        by remember { mutableStateOf(GameSave.lastUseDiagonals) }
+    var useSecondHints      by remember { mutableStateOf(GameSave.lastUseSecondHints) }
+    var showDiagonalHelp    by remember { mutableStateOf(false) }
+    var showSecondHintHelp  by remember { mutableStateOf(false) }
+
+    if (showDiagonalHelp) {
+        AlertDialog(
+            onDismissRequest = { showDiagonalHelp = false },
+            title = { Text("Cross-aint") },
+            text  = { Text("When enabled, both main diagonals must also contain each letter exactly once.") },
+            confirmButton = { TextButton(onClick = { showDiagonalHelp = false }) { Text("Mhm!") } }
+        )
+    }
+    if (showSecondHintHelp) {
+        AlertDialog(
+            onDismissRequest = { showSecondHintHelp = false },
+            title = { Text("Second Helpings") },
+            text  = { Text("When enabled, you get additional hints showing the second visible letter from that direction.") },
+            confirmButton = { TextButton(onClick = { showSecondHintHelp = false }) { Text("Yummy!") } }
+        )
+    }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val minHeight = maxHeight
@@ -99,7 +122,7 @@ fun WelcomeScreen(
 
         // ── New-game size picker ──────────────────────────────────────────────
         Text(
-            text = "Take a seat and grab a bowl:",
+            text = "Take a seat and choose a bowl:",
             fontSize = 18.sp,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface
@@ -112,7 +135,7 @@ fun WelcomeScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
         ) {
             for (size in 4..6) {
-                SizeButton(size = size, onClick = { onNewGame(size, difficulty) })
+                SizeButton(size = size, onClick = { onNewGame(size, difficulty, useDiagonals, useSecondHints) })
             }
         }
 
@@ -123,7 +146,7 @@ fun WelcomeScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
         ) {
             for (size in 7..8) {
-                SizeButton(size = size, onClick = { onNewGame(size, difficulty) })
+                SizeButton(size = size, onClick = { onNewGame(size, difficulty, useDiagonals, useSecondHints) })
             }
         }
 
@@ -131,7 +154,7 @@ fun WelcomeScreen(
 
         // ── Difficulty picker ─────────────────────────────────────────────────
         Text(
-            text = "Pick a sauce:",
+            text = "Pick your sauce:",
             fontSize = 18.sp,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface
@@ -152,6 +175,38 @@ fun WelcomeScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // ── Diagonal rules toggle ─────────────────────────────────────────────
+        Text(
+            text = "Anything else?",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            FilterChip(
+                selected = useDiagonals,
+                onClick  = { useDiagonals = !useDiagonals },
+                label    = { Text(if (useDiagonals) "Cross-aint: ON" else "Cross-aint: OFF") }
+            )
+            TextButton(onClick = { showDiagonalHelp = true }) { Text("?") }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            FilterChip(
+                selected = useSecondHints,
+                onClick  = { useSecondHints = !useSecondHints },
+                label    = { Text(if (useSecondHints) "Second helpings: ON" else "Second helpings: OFF") }
+            )
+            TextButton(onClick = { showSecondHintHelp = true }) { Text("?") }
+        }
+
         } // Column
     } // BoxWithConstraints
 }
@@ -170,6 +225,6 @@ private fun SizeButton(size: Int, onClick: () -> Unit) {
 @Composable
 fun WelcomeScreenPreview() {
     AlphabetSoupTheme {
-        WelcomeScreen(resumableGame = null, onResume = {}, onNewGame = { _, _ -> })
+        WelcomeScreen(resumableGame = null, onResume = {}, onNewGame = { _, _, _, _ -> })
     }
 }
