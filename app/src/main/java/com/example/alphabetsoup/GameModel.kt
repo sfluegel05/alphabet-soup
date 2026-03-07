@@ -1,7 +1,9 @@
 package com.example.alphabetsoup
 
-enum class Difficulty(val label: String) {
-    Easy("Mild"), Medium("Regular"), Hard("Spicy")
+enum class Difficulty(val label: String, val emoji: String, val extraHintQuota: Double) {
+    // extra hint quota gives the number of extra hints multiplied by game size, rounded down
+    // e.g. quota 0.4 gives 1.6=1 extra hint for size 4, 2.0=2 extra hints for size 5, 3.2=3 extra hints for size  8
+    Easy("🌿 Mild", "🌿", 0.7), Medium("🌶️ Regular", "🌶️", 0.5), Hard("🔥 Spicy", "🔥", 0.0)
 }
 
 /** A cell that the player has left blank (valid puzzle move). */
@@ -62,7 +64,7 @@ data class SavedGame(
     val cells: List<Int>,
     val pencilMarks: List<Set<Int>>,
     val elapsedSeconds: Long,
-    val history: List<List<Int>>
+    val history: List<Pair<List<Int>, List<Set<Int>>>>
 )
 
 /** In-memory save slots, one per grid size. Tracks the most-recently saved slot. */

@@ -68,7 +68,7 @@ const val EMPTY_CELL_SYMBOL = "/"
 private class GameProgress(
     var cells: List<Int>            = emptyList(),
     var pencilMarks: List<Set<Int>> = emptyList(),
-    var history: List<List<Int>>    = emptyList(),
+    var history: List<Pair<List<Int>, List<Set<Int>>>> = emptyList(),
     var isSolved: Boolean           = false
 )
 
@@ -79,9 +79,12 @@ private class GameProgress(
 fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSecondHints: Boolean, onBack: () -> Unit) {
     var gameState by remember { mutableStateOf<GameState?>(null) }
 
-    var elapsedSeconds by remember { mutableStateOf(0L) }
-    var timerActive    by remember { mutableStateOf(false) }
-    var showHelp       by remember { mutableStateOf(false) }
+    var elapsedSeconds  by remember { mutableStateOf(0L) }
+    var timerActive     by remember { mutableStateOf(false) }
+    var showHelp        by remember { mutableStateOf(false) }
+    var showResetConfirm by remember { mutableStateOf(false) }
+    // Plain array so updates from SideEffect don't trigger recomposition.
+    val resetFnHolder   = remember { arrayOf<() -> Unit>({}) }
 
     // Bridge object: PuzzleBoard writes its state here every recomposition so
     // GameScreen can persist it when the user navigates back.
@@ -105,6 +108,20 @@ fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSeco
                 ))
             }
         }
+    }
+
+    if (showResetConfirm) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirm = false },
+            title = { Text("Reheat soup?") },
+            text  = { Text("Eat the same soup again. This will clear all your progress.") },
+            confirmButton = {
+                TextButton(onClick = { resetFnHolder[0](); showResetConfirm = false }) { Text("Reset") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirm = false }) { Text("Cancel") }
+            }
+        )
     }
 
     if (showHelp) {
@@ -164,7 +181,7 @@ fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSeco
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Alphabet Soup – ${size}×${size}") },
+                title = { Text("Alphabet Soup – ${difficulty.emoji} ${size}×${size}") },
                 navigationIcon = {
                     IconButton(onClick = {
                         val gs = gameState
@@ -189,6 +206,14 @@ fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSeco
                     }
                 },
                 actions = {
+                    IconButton(onClick = { if (gameState != null) showResetConfirm = true }) {
+                        Text(
+                            text  = "↺",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (gameState != null) MaterialTheme.colorScheme.onSurface
+                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        )
+                    }
                     IconButton(onClick = { showHelp = true }) {
                         Text(
                             text  = "?",
@@ -226,13 +251,14 @@ fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSeco
             }
         } else {
             PuzzleBoard(
-                gameState      = state,
-                modifier       = Modifier.padding(innerPadding),
-                elapsedSeconds = elapsedSeconds,
-                progress       = progress,
-                onSolved       = { timerActive = false },
-                onBack         = onBack,
-                difficulty     = difficulty
+                gameState         = state,
+                modifier          = Modifier.padding(innerPadding),
+                elapsedSeconds    = elapsedSeconds,
+                progress          = progress,
+                onSolved          = { timerActive = false },
+                onBack            = onBack,
+                difficulty        = difficulty,
+                onRegisterReset   = { fn -> resetFnHolder[0] = fn }
             )
         }
     }
@@ -249,7 +275,8 @@ private fun PuzzleBoard(
     progress: GameProgress,
     onSolved: () -> Unit,
     onBack: () -> Unit,
-    difficulty: Difficulty
+    difficulty: Difficulty,
+    onRegisterReset: (() -> Unit) -> Unit
 ) {
     val size    = gameState.size
     val context = LocalContext.current
@@ -278,15 +305,16 @@ private fun PuzzleBoard(
     // ── Undo history ───────────────────────────────────────────────────────
     // Each entry is a snapshot of cells taken before a commit/clear action.
     val history = remember(gameState) {
-        val deque = ArrayDeque<List<Int>>()
+        val deque = ArrayDeque<Pair<List<Int>, List<Set<Int>>>>()
         progress.history.forEach { deque.addLast(it) }
         deque
     }
 
-    fun saveSnapshot() { history.addLast(cells.toList()) }
+    fun saveSnapshot() { history.addLast(cells.toList() to pencilMarks.toList()) }
     fun undo() {
-        val snap = history.removeLastOrNull() ?: return
-        snap.forEachIndexed { i, v -> cells[i] = v }
+        val (snapCells, snapMarks) = history.removeLastOrNull() ?: return
+        snapCells.forEachIndexed { i, v -> cells[i] = v }
+        snapMarks.forEachIndexed { i, v -> pencilMarks[i] = v }
         selectedCell = null
     }
 
@@ -312,6 +340,7 @@ private fun PuzzleBoard(
 
     fun toggleCandidate(candidate: Int) {
         val idx = selectedCell ?: return
+        saveSnapshot()
         val current = pencilMarks[idx]
         pencilMarks[idx] = if (candidate in current) current - candidate else current + candidate
     }
@@ -330,6 +359,12 @@ private fun PuzzleBoard(
         progress.pencilMarks = pencilMarks.toList()
         progress.history     = history.toList()
         progress.isSolved    = isSolved
+        onRegisterReset {
+            cells.indices.forEach       { i -> cells[i]       = CELL_UNSET }
+            pencilMarks.indices.forEach { i -> pencilMarks[i] = emptySet() }
+            history.clear()
+            selectedCell = null
+        }
     }
 
     var showSolvedDialog by remember { mutableStateOf(false) }
@@ -348,7 +383,7 @@ private fun PuzzleBoard(
         val seconds = elapsedSeconds % 60
 
         fun shareBrag() {
-            var msg = "I have devoured a whole bowl of Alphabet Soup ($size x $size, ${difficulty.label}) - and it only took me"
+            var msg = "I have devoured a whole bowl of Alphabet Soup ($size x $size, ${difficulty.emoji}) - and it only took me"
             msg += if (minutes == 0L) {
                 // Special case for sub-1-minute times: "only 45 seconds!"
                 " $seconds seconds! Can you do better?"
@@ -383,9 +418,9 @@ private fun PuzzleBoard(
 
         // In landscape the grid gets half the width; height is the full available height.
         val cellSize = if (isLandscape)
-            minOf(maxWidth / (2 * (size + 2)), maxHeight / (size + 2)).coerceAtMost(56.dp)
+            minOf(maxWidth / (2 * (size + 2)), maxHeight / (size + 2))
         else
-            (maxWidth / (size + 2)).coerceAtMost(56.dp)
+            maxWidth / (size + 2)
 
         val sel = selectedCell
 
@@ -459,7 +494,7 @@ private fun PuzzleBoard(
                         }
                     }
                 }
-                // ── Controls row: undo + pencil toggle ────────────────────
+                // ── Controls row: undo + clear + pencil toggle ────────────
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment     = Alignment.CenterVertically
@@ -468,6 +503,21 @@ private fun PuzzleBoard(
                         onClick  = { undo() },
                         enabled  = history.isNotEmpty()
                     ) { Text("Undo") }
+
+                    val clearEnabled = sel != null && (cells[sel] != CELL_UNSET || pencilMarks[sel].isNotEmpty())
+                    TextButton(
+                        onClick = {
+                            val idx = sel ?: return@TextButton
+                            if (cells[idx] != CELL_UNSET) {
+                                saveSnapshot()
+                                cells[idx] = CELL_UNSET
+                            } else {
+                                saveSnapshot()
+                                pencilMarks[idx] = emptySet()
+                            }
+                        },
+                        enabled = clearEnabled
+                    ) { Text("Clear") }
 
                     FilterChip(
                         selected = pencilMode,

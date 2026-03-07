@@ -63,11 +63,8 @@ object PuzzleGenerator {
         }
         println("Removing hints...")
         val reducedHints = removeHints(size, fullHints, secondHints, useDiagonals, random)
-        val reAddCount = when (difficulty) {
-            Difficulty.Hard   -> 0
-            Difficulty.Medium -> if (size == 4) 1 else if (size <= 6) 2 else 3
-            Difficulty.Easy   -> if (size == 4) 2 else if (size <= 6) 3 else 5
-        }
+        // round down to next integer
+        val reAddCount = (size * difficulty.extraHintQuota).toInt()
         val finalHints    = reAddHints(fullHints, reducedHints, reAddCount, random)
         val playerGrid    = Array(size) { IntArray(size) { CELL_UNSET } }
         println("Done!")
