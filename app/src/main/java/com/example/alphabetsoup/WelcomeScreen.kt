@@ -42,6 +42,7 @@ fun WelcomeScreen(
     resumableGame: SavedGame?,
     onResume: () -> Unit,
     onNewGame: (Int, Difficulty, Boolean, Boolean) -> Unit,
+    onStats: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var difficulty          by remember { mutableStateOf(GameSave.lastDifficulty) }
@@ -202,9 +203,15 @@ fun WelcomeScreen(
             FilterChip(
                 selected = useSecondHints,
                 onClick  = { useSecondHints = !useSecondHints },
-                label    = { Text(if (useSecondHints) "Second helpings: ON" else "Second helpings: OFF") }
+                label    = { Text(if (useSecondHints) "2nd helpings: ON" else "2nd helpings: OFF") }
             )
             TextButton(onClick = { showSecondHintHelp = true }) { Text("?") }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        TextButton(onClick = onStats) {
+            Text("View Statistics")
         }
 
         } // Column
@@ -225,6 +232,6 @@ private fun SizeButton(size: Int, onClick: () -> Unit) {
 @Composable
 fun WelcomeScreenPreview() {
     AlphabetSoupTheme {
-        WelcomeScreen(resumableGame = null, onResume = {}, onNewGame = { _, _, _, _ -> })
+        WelcomeScreen(resumableGame = null, onResume = {}, onNewGame = { _, _, _, _ -> }, onStats = {})
     }
 }

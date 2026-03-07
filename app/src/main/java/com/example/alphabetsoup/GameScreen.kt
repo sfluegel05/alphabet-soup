@@ -77,6 +77,7 @@ private class GameProgress(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSecondHints: Boolean, onBack: () -> Unit) {
+    val context   = LocalContext.current
     var gameState by remember { mutableStateOf<GameState?>(null) }
 
     var elapsedSeconds  by remember { mutableStateOf(0L) }
@@ -255,7 +256,19 @@ fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSeco
                 modifier          = Modifier.padding(innerPadding),
                 elapsedSeconds    = elapsedSeconds,
                 progress          = progress,
-                onSolved          = { timerActive = false },
+                onSolved          = {
+                    timerActive = false
+                    SolveHistory.add(
+                        SolveRecord(
+                            timestamp      = System.currentTimeMillis(),
+                            size           = size,
+                            difficulty     = difficulty,
+                            useDiagonals   = useDiagonals,
+                            useSecondHints = useSecondHints,
+                            elapsedSeconds = elapsedSeconds
+                        ), context
+                    )
+                },
                 onBack            = onBack,
                 difficulty        = difficulty,
                 onRegisterReset   = { fn -> resetFnHolder[0] = fn }

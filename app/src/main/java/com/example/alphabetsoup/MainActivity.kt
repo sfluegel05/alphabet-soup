@@ -15,7 +15,8 @@ import androidx.compose.ui.Modifier
 import com.example.alphabetsoup.ui.theme.AlphabetSoupTheme
 
 private sealed class Screen {
-    object Welcome : Screen()
+    object Welcome    : Screen()
+    object Statistics : Screen()
     data class Game(val size: Int, val difficulty: Difficulty, val useDiagonals: Boolean, val useSecondHints: Boolean) : Screen()
 }
 
@@ -23,24 +24,31 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        SolveHistory.init(this)
         setContent {
             AlphabetSoupTheme {
                 // Encoded as Int so rememberSaveable survives configuration changes.
-                // 0 = Welcome; Game = size*1000 + difficulty.ordinal*100 + (if useDiagonals 10 else 0) + (if useSecondHints 1 else 0)
-                // min Game value = 4*1000 = 4000, so 0 is unambiguous for Welcome.
+                // 0 = Welcome; -1 = Statistics
+                // Game = size*1000 + difficulty.ordinal*100 + (if useDiagonals 10 else 0) + (if useSecondHints 1 else 0)
+                // min Game value = 4*1000 = 4000, so 0/-1 are unambiguous.
                 var encodedScreen by rememberSaveable { mutableStateOf(0) }
-                val screen: Screen = if (encodedScreen == 0) Screen.Welcome
-                                     else Screen.Game(
-                                         size           = encodedScreen / 1000,
-                                         difficulty     = Difficulty.entries[(encodedScreen / 100) % 10],
-                                         useDiagonals   = (encodedScreen / 10) % 10 == 1,
-                                         useSecondHints = encodedScreen % 10 == 1
-                                     )
+                val screen: Screen = when {
+                    encodedScreen == 0  -> Screen.Welcome
+                    encodedScreen == -1 -> Screen.Statistics
+                    else                -> Screen.Game(
+                        size           = encodedScreen / 1000,
+                        difficulty     = Difficulty.entries[(encodedScreen / 100) % 10],
+                        useDiagonals   = (encodedScreen / 10) % 10 == 1,
+                        useSecondHints = encodedScreen % 10 == 1
+                    )
+                }
                 when (val s = screen) {
+                    is Screen.Statistics -> StatisticsScreen(onBack = { encodedScreen = 0 })
                     is Screen.Welcome -> Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                         WelcomeScreen(
                             modifier      = Modifier.padding(innerPadding),
                             resumableGame = GameSave.getLastSaved(),
+                            onStats       = { encodedScreen = -1 },
                             onResume      = {
                                 val saved = GameSave.getLastSaved()!!
                                 encodedScreen = saved.size * 1000 + saved.difficulty.ordinal * 100 + (if (saved.useDiagonals) 10 else 0) + (if (saved.useSecondHints) 1 else 0)

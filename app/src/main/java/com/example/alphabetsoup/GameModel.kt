@@ -1,5 +1,8 @@
 package com.example.alphabetsoup
 
+import android.content.Context
+import java.util.Date
+
 enum class Difficulty(val label: String, val emoji: String, val extraHintQuota: Double) {
     // extra hint quota gives the number of extra hints multiplied by game size, rounded down
     // e.g. quota 0.4 gives 1.6=1 extra hint for size 4, 2.0=2 extra hints for size 5, 3.2=3 extra hints for size  8
@@ -66,6 +69,46 @@ data class SavedGame(
     val elapsedSeconds: Long,
     val history: List<Pair<List<Int>, List<Set<Int>>>>
 )
+
+data class SolveRecord(
+    val timestamp: Long,           // ms since epoch
+    val size: Int,
+    val difficulty: Difficulty,
+    val useDiagonals: Boolean,
+    val useSecondHints: Boolean,
+    val elapsedSeconds: Long
+)
+
+/** Persistent solve history, backed by SharedPreferences. */
+object SolveHistory {
+    private val _records = mutableListOf<SolveRecord>()
+    val records: List<SolveRecord> get() = _records.toList()
+
+    fun init(context: Context) {
+        val prefs = context.getSharedPreferences("solve_history", Context.MODE_PRIVATE)
+        val stored = prefs.getStringSet("records", emptySet()) ?: emptySet()
+        _records.clear()
+        stored.mapNotNullTo(_records) { deserialize(it) }
+        _records.sortBy { it.timestamp }
+    }
+
+    fun add(record: SolveRecord, context: Context) {
+        _records.add(record)
+        val prefs = context.getSharedPreferences("solve_history", Context.MODE_PRIVATE)
+        val stored = prefs.getStringSet("records", emptySet())?.toMutableSet() ?: mutableSetOf()
+        stored.add(serialize(record))
+        prefs.edit().putStringSet("records", stored).apply()
+    }
+
+    private fun serialize(r: SolveRecord) =
+        "${r.timestamp},${r.size},${r.difficulty.ordinal},${r.useDiagonals},${r.useSecondHints},${r.elapsedSeconds}"
+
+    private fun deserialize(s: String): SolveRecord? = try {
+        val p = s.split(",")
+        SolveRecord(p[0].toLong(), p[1].toInt(), Difficulty.entries[p[2].toInt()],
+            p[3].toBoolean(), p[4].toBoolean(), p[5].toLong())
+    } catch (_: Exception) { null }
+}
 
 /** In-memory save slots, one per grid size. Tracks the most-recently saved slot. */
 object GameSave {
