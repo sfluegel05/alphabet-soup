@@ -1,12 +1,15 @@
 package com.example.alphabetsoup
 
 import android.content.Context
-import java.util.Date
+import com.sfluegel.puzzleutils.GameSetting
+import com.sfluegel.puzzleutils.PersistentHistory
+import com.sfluegel.puzzleutils.SaveStore
+import com.sfluegel.puzzleutils.SettingOption
 
-enum class Difficulty(val label: String, val emoji: String, val extraHintQuota: Double) {
+enum class Difficulty(val extraHintQuota: Double) {
     // extra hint quota gives the number of extra hints multiplied by game size, rounded down
     // e.g. quota 0.4 gives 1.6=1 extra hint for size 4, 2.0=2 extra hints for size 5, 3.2=3 extra hints for size  8
-    Easy("🌿 Mild", "🌿", 0.7), Medium("🌶️ Regular", "🌶️", 0.5), Hard("🔥 Spicy", "🔥", 0.0)
+    Easy(0.7), Medium(0.5), Hard(0.0)
 }
 
 /** A cell that the player has left blank (valid puzzle move). */
@@ -80,57 +83,60 @@ data class SolveRecord(
 )
 
 /** Persistent solve history, backed by SharedPreferences. */
-object SolveHistory {
-    private val _records = mutableListOf<SolveRecord>()
-    val records: List<SolveRecord> get() = _records.toList()
+object SolveHistory : PersistentHistory<SolveRecord>("solve_history") {
+    override fun serialize(record: SolveRecord) =
+        "${record.timestamp},${record.size},${record.difficulty.ordinal},${record.useDiagonals},${record.useSecondHints},${record.elapsedSeconds}"
 
-    fun init(context: Context) {
-        val prefs = context.getSharedPreferences("solve_history", Context.MODE_PRIVATE)
-        val stored = prefs.getStringSet("records", emptySet()) ?: emptySet()
-        _records.clear()
-        stored.mapNotNullTo(_records) { deserialize(it) }
-        _records.sortBy { it.timestamp }
-    }
-
-    fun add(record: SolveRecord, context: Context) {
-        _records.add(record)
-        val prefs = context.getSharedPreferences("solve_history", Context.MODE_PRIVATE)
-        val stored = prefs.getStringSet("records", emptySet())?.toMutableSet() ?: mutableSetOf()
-        stored.add(serialize(record))
-        prefs.edit().putStringSet("records", stored).apply()
-    }
-
-    private fun serialize(r: SolveRecord) =
-        "${r.timestamp},${r.size},${r.difficulty.ordinal},${r.useDiagonals},${r.useSecondHints},${r.elapsedSeconds}"
-
-    private fun deserialize(s: String): SolveRecord? = try {
+    override fun deserialize(s: String): SolveRecord? = try {
         val p = s.split(",")
         SolveRecord(p[0].toLong(), p[1].toInt(), Difficulty.entries[p[2].toInt()],
             p[3].toBoolean(), p[4].toBoolean(), p[5].toLong())
     } catch (_: Exception) { null }
+
+    override fun timestampOf(record: SolveRecord) = record.timestamp
 }
 
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+object DifficultySetting : GameSetting<Difficulty>(
+    name = "Difficulty",
+    options = listOf(
+        SettingOption(Difficulty.Easy,   label = "Mild",    emoji = "🌿"),
+        SettingOption(Difficulty.Medium, label = "Regular", emoji = "🌶️"),
+        SettingOption(Difficulty.Hard,   label = "Spicy",   emoji = "🔥"),
+    ),
+    defaultIndex = 1
+)
+
+object DiagonalsSetting : GameSetting<Boolean>(
+    name = "Diagonals",
+    options = listOf(
+        SettingOption(true,  label = "Cross-aint",  emoji = "✚"),
+        SettingOption(false, label = "No diagonals", emoji = ""),
+    ),
+    defaultIndex = 0
+)
+
+object SecondHintsSetting : GameSetting<Boolean>(
+    name = "Second hints",
+    options = listOf(
+        SettingOption(true,  label = "2nd helpings", emoji = "2️⃣"),
+        SettingOption(false, label = "1st hints",    emoji = ""),
+    ),
+    defaultIndex = 1
+)
+
+// ── Save slots ────────────────────────────────────────────────────────────────
+
 /** In-memory save slots, one per grid size. Tracks the most-recently saved slot. */
-object GameSave {
-    private val saves    = HashMap<Int, SavedGame>()
-    private var lastSize: Int? = null
-    var lastDifficulty: Difficulty = Difficulty.Medium
+object GameSave : SaveStore<Int, SavedGame>({ it.size }) {
+    var lastDifficulty: Difficulty = DifficultySetting.default.value
         private set
-    var lastUseDiagonals: Boolean = true
+    var lastUseDiagonals: Boolean = DiagonalsSetting.default.value
         private set
-    var lastUseSecondHints: Boolean = false
+    var lastUseSecondHints: Boolean = SecondHintsSetting.default.value
         private set
 
-    fun put(game: SavedGame) {
-        saves[game.size] = game
-        lastSize = game.size
-    }
-    fun get(size: Int): SavedGame?  = saves[size]
-    fun getLastSaved(): SavedGame?  = lastSize?.let { saves[it] }
-    fun clear(size: Int) {
-        saves.remove(size)
-        if (lastSize == size) lastSize = null
-    }
     fun recordDifficulty(d: Difficulty) { lastDifficulty = d }
     fun recordUseDiagonals(v: Boolean)   { lastUseDiagonals   = v }
     fun recordUseSecondHints(v: Boolean) { lastUseSecondHints = v }

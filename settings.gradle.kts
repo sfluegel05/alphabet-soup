@@ -21,4 +21,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "AlphabetSoup"
 include(":app")
+includeBuild("../PuzzleUtils")
  

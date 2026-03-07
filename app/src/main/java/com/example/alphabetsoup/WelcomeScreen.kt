@@ -35,6 +35,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.alphabetsoup.ui.theme.AlphabetSoupTheme
+import kotlin.text.ifEmpty
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,12 +104,17 @@ fun WelcomeScreen(
             val s = resumableGame.size
             val mins = resumableGame.elapsedSeconds / 60
             val secs = resumableGame.elapsedSeconds % 60
+            val settings_string = listOfNotNull(
+                DifficultySetting.emoji(resumableGame.difficulty).ifEmpty { null },
+                DiagonalsSetting.emoji(resumableGame.useDiagonals).ifEmpty { null },
+                SecondHintsSetting.emoji(resumableGame.useSecondHints).ifEmpty { null }).joinToString(" ")
             Button(
                 onClick  = onResume,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text     = "Resume ${s}×${s}  ·  ${resumableGame.difficulty.label}  ·  (%d:%02d)".format(mins, secs),
+
+                            text     = "Resume ${s}×${s}  ·  ${settings_string}  ·  (%d:%02d)".format(mins, secs),
                     fontSize = 16.sp
                 )
             }
@@ -167,11 +173,11 @@ fun WelcomeScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
         ) {
-            Difficulty.entries.forEach { d ->
+            DifficultySetting.options.forEach { option ->
                 FilterChip(
-                    selected = difficulty == d,
-                    onClick  = { difficulty = d },
-                    label    = { Text(d.label) }
+                    selected = difficulty == option.value,
+                    onClick  = { difficulty = option.value },
+                    label    = { Text(option.displayName) }
                 )
             }
         }
@@ -192,7 +198,7 @@ fun WelcomeScreen(
             FilterChip(
                 selected = useDiagonals,
                 onClick  = { useDiagonals = !useDiagonals },
-                label    = { Text(if (useDiagonals) "Cross-aint: ON" else "Cross-aint: OFF") }
+                label    = { Text("${DiagonalsSetting.displayName(true)}: ${if (useDiagonals) "ON" else "OFF"}") }
             )
             TextButton(onClick = { showDiagonalHelp = true }) { Text("?") }
         }
@@ -203,7 +209,7 @@ fun WelcomeScreen(
             FilterChip(
                 selected = useSecondHints,
                 onClick  = { useSecondHints = !useSecondHints },
-                label    = { Text(if (useSecondHints) "2nd helpings: ON" else "2nd helpings: OFF") }
+                label    = { Text("${SecondHintsSetting.displayName(true)}: ${if (useSecondHints) "ON" else "OFF"}") }
             )
             TextButton(onClick = { showSecondHintHelp = true }) { Text("?") }
         }

@@ -6,7 +6,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,15 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.StartOffset
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.shape.CircleShape
+import com.sfluegel.puzzleutils.PuzzleLayout
+import com.sfluegel.puzzleutils.WavyLoadingIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -182,7 +174,7 @@ fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSeco
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Alphabet Soup – ${difficulty.emoji} ${size}×${size}") },
+                title = { Text("Alphabet Soup – ${DifficultySetting.emoji(difficulty)} ${size}×${size}") },
                 navigationIcon = {
                     IconButton(onClick = {
                         val gs = gameState
@@ -396,7 +388,7 @@ private fun PuzzleBoard(
         val seconds = elapsedSeconds % 60
 
         fun shareBrag() {
-            var msg = "I have devoured a whole bowl of Alphabet Soup ($size x $size, ${difficulty.emoji}) - and it only took me"
+            var msg = "I have devoured a whole bowl of Alphabet Soup ($size x $size, ${DifficultySetting.emoji(difficulty)}) - and it only took me"
             msg += if (minutes == 0L) {
                 // Special case for sub-1-minute times: "only 45 seconds!"
                 " $seconds seconds! Can you do better?"
@@ -426,19 +418,10 @@ private fun PuzzleBoard(
         )
     }
 
-    BoxWithConstraints(modifier = modifier.fillMaxSize().padding(8.dp)) {
-        val isLandscape = maxWidth > maxHeight
-
-        // In landscape the grid gets half the width; height is the full available height.
-        val cellSize = if (isLandscape)
-            minOf(maxWidth / (2 * (size + 2)), maxHeight / (size + 2))
-        else
-            maxWidth / (size + 2)
-
-        val sel = selectedCell
-
-        // ── Shared content blocks ─────────────────────────────────────────
-        val grid: @Composable () -> Unit = {
+    PuzzleLayout(
+        modifier = modifier,
+        grid = { availableWidth, availableHeight ->
+            val cellSize = minOf(availableWidth / (size + 2), availableHeight / (size + 2))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Row {
                     Spacer(Modifier.size(cellSize))
@@ -470,9 +453,9 @@ private fun PuzzleBoard(
                     Spacer(Modifier.size(cellSize))
                 }
             }
-        }
-
-        val controls: @Composable () -> Unit = {
+        },
+        controls = {
+            val sel = selectedCell
             Column(
                 modifier            = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -540,74 +523,10 @@ private fun PuzzleBoard(
                 }
             }
         }
-
-        // ── Orientation-aware layout ──────────────────────────────────────
-        if (isLandscape) {
-            Row(
-                modifier             = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment    = Alignment.Top
-            ) {
-                Box(
-                    modifier         = Modifier.weight(1f).fillMaxHeight(),
-                    contentAlignment = Alignment.TopCenter
-                ) { grid() }
-                Box(
-                    modifier         = Modifier.weight(1f).fillMaxHeight(),
-                    contentAlignment = Alignment.Center
-                ) { controls() }
-            }
-        } else {
-            Column(
-                modifier            = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                grid()
-                Spacer(Modifier.height(16.dp))
-                controls()
-            }
-        }
-    }
+    )
 }
 
-// ── Wavy loading indicator ────────────────────────────────────────────────────
 
-@Composable
-private fun WavyLoadingIndicator(dotCount: Int = 5) {
-    val transition = rememberInfiniteTransition(label = "wavy")
-    val color = MaterialTheme.colorScheme.primary
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.height(40.dp)
-    ) {
-        repeat(dotCount) { index ->
-            val offsetY by transition.animateFloat(
-                initialValue = 0f,
-                targetValue = 0f,
-                animationSpec = infiniteRepeatable(
-                    animation = keyframes {
-                        durationMillis = 900
-                        0f at 0 using FastOutSlowInEasing
-                        -18f at 250 using FastOutSlowInEasing
-                        0f at 500
-                        // stays at 0 from 500–900 (rest between bounces)
-                    },
-                    repeatMode = RepeatMode.Restart,
-                    initialStartOffset = StartOffset(index * 120)
-                ),
-                label = "dot_$index"
-            )
-            Box(
-                modifier = Modifier
-                    .size(12.dp)
-                    .offset(y = offsetY.dp)
-                    .background(color, CircleShape)
-            )
-        }
-    }
-}
 
 // ── Individual cells ──────────────────────────────────────────────────────────
 
