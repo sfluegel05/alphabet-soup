@@ -19,7 +19,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,6 +27,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -46,6 +48,7 @@ fun WelcomeScreen(
     onStats: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var selectedSize        by remember { mutableStateOf(5) }
     var difficulty          by remember { mutableStateOf(GameSave.lastDifficulty) }
     var useDiagonals        by remember { mutableStateOf(GameSave.lastUseDiagonals) }
     var useSecondHints      by remember { mutableStateOf(GameSave.lastUseSecondHints) }
@@ -139,21 +142,21 @@ fun WelcomeScreen(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         ) {
             for (size in 4..6) {
-                SizeButton(size = size, onClick = { onNewGame(size, difficulty, useDiagonals, useSecondHints) })
+                SizeButton(size = size, selected = selectedSize == size, onClick = { selectedSize = size })
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(0.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
         ) {
             for (size in 7..8) {
-                SizeButton(size = size, onClick = { onNewGame(size, difficulty, useDiagonals, useSecondHints) })
+                SizeButton(size = size, selected = selectedSize == size, onClick = { selectedSize = size })
             }
         }
 
@@ -203,7 +206,7 @@ fun WelcomeScreen(
             TextButton(onClick = { showDiagonalHelp = true }) { Text("?") }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(0.dp))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             FilterChip(
@@ -216,22 +219,49 @@ fun WelcomeScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
 
+        Button(
+            onClick  = { onNewGame(selectedSize, difficulty, useDiagonals, useSecondHints) },
+            //modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(text = "Place your order!", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         TextButton(onClick = onStats) {
             Text("View Statistics")
         }
+
+        val context = LocalContext.current
+        TextButton(onClick = {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/sfluegel05/alphabet-soup/issues")))
+        }) {
+            Text("Complaints? Suggestions?")
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        val versionName = remember {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }
+        Text(
+            text = "v$versionName",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         } // Column
     } // BoxWithConstraints
 }
 
 @Composable
-private fun SizeButton(size: Int, onClick: () -> Unit) {
-    OutlinedButton(
+private fun SizeButton(size: Int, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
         onClick  = onClick,
-        modifier = Modifier.width(80.dp)
-    ) {
-        Text(text = "${size}×${size}", fontSize = 16.sp)
-    }
+        label    = { Text(text = "${size}×${size}", fontSize = 16.sp) },
+        //modifier = Modifier.width(80.dp)
+    )
 }
 
 @Preview(showBackground = true)
