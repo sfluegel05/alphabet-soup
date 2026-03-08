@@ -1,6 +1,6 @@
 package com.example.alphabetsoup
 
-import androidx.compose.foundation.layout.Arrangement
+import  androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -118,9 +118,9 @@ private data class ConfigKey(
 )
 
 private fun configLabel(key: ConfigKey) = buildString {
-    append("${key.size}×${key.size} · ${key.difficulty.label}")
-    if (key.useDiagonals)   append(" · Cross-aint")
-    if (key.useSecondHints) append(" · 2nd helpings")
+    append("${key.size}×${key.size} · ${DifficultySetting.displayName(key.difficulty)}")
+    if (key.useDiagonals)   append(" · ${DiagonalsSetting.label(true)}")
+    if (key.useSecondHints) append(" · ${SecondHintsSetting.label(true)}")
 }
 
 private fun formatTime(seconds: Long) = "%d:%02d".format(seconds / 60, seconds % 60)
