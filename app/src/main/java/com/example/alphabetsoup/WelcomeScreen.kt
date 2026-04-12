@@ -36,7 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.alphabetsoup.ui.theme.AlphabetSoupTheme
+import com.example.compose.AlphabetSoupTheme
 import kotlin.text.ifEmpty
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,7 +44,7 @@ import kotlin.text.ifEmpty
 fun WelcomeScreen(
     resumableGame: SavedGame?,
     onResume: () -> Unit,
-    onNewGame: (Int, Difficulty, Boolean, Boolean) -> Unit,
+    onNewGame: (Int, Difficulty, Boolean, Boolean, Boolean) -> Unit,
     onStats: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -52,8 +52,10 @@ fun WelcomeScreen(
     var difficulty          by remember { mutableStateOf(GameSave.lastDifficulty) }
     var useDiagonals        by remember { mutableStateOf(GameSave.lastUseDiagonals) }
     var useSecondHints      by remember { mutableStateOf(GameSave.lastUseSecondHints) }
+    var useSubGrids         by remember { mutableStateOf(GameSave.lastUseSubGrids) }
     var showDiagonalHelp    by remember { mutableStateOf(false) }
     var showSecondHintHelp  by remember { mutableStateOf(false) }
+    var showSubGridHelp     by remember { mutableStateOf(false) }
 
     if (showDiagonalHelp) {
         AlertDialog(
@@ -69,6 +71,14 @@ fun WelcomeScreen(
             title = { Text("Second Helpings") },
             text  = { Text("When enabled, you get additional hints showing the second visible letter from that direction.") },
             confirmButton = { TextButton(onClick = { showSecondHintHelp = false }) { Text("Yummy!") } }
+        )
+    }
+    if (showSubGridHelp) {
+        AlertDialog(
+            onDismissRequest = { showSubGridHelp = false },
+            title = { Text("Sub-grids") },
+            text  = { Text("When enabled, the grid is divided into ${selectedSize} irregularly shaped regions. Each region must also contain each letter exactly once — just like in Sudoku.") },
+            confirmButton = { TextButton(onClick = { showSubGridHelp = false }) { Text("Tasty!") } }
         )
     }
 
@@ -110,7 +120,8 @@ fun WelcomeScreen(
             val settings_string = listOfNotNull(
                 DifficultySetting.emoji(resumableGame.difficulty).ifEmpty { null },
                 DiagonalsSetting.emoji(resumableGame.useDiagonals).ifEmpty { null },
-                SecondHintsSetting.emoji(resumableGame.useSecondHints).ifEmpty { null }).joinToString(" ")
+                SecondHintsSetting.emoji(resumableGame.useSecondHints).ifEmpty { null },
+                SubGridsSetting.emoji(resumableGame.useSubGrids).ifEmpty { null }).joinToString(" ")
             Button(
                 onClick  = onResume,
                 modifier = Modifier.fillMaxWidth()
@@ -217,10 +228,21 @@ fun WelcomeScreen(
             TextButton(onClick = { showSecondHintHelp = true }) { Text("?") }
         }
 
+        Spacer(modifier = Modifier.height(0.dp))
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            FilterChip(
+                selected = useSubGrids,
+                onClick  = { useSubGrids = !useSubGrids },
+                label    = { Text("${SubGridsSetting.displayName(true)}: ${if (useSubGrids) "ON" else "OFF"}") }
+            )
+            TextButton(onClick = { showSubGridHelp = true }) { Text("?") }
+        }
+
         Spacer(modifier = Modifier.height(32.dp))
 
         Button(
-            onClick  = { onNewGame(selectedSize, difficulty, useDiagonals, useSecondHints) },
+            onClick  = { onNewGame(selectedSize, difficulty, useDiagonals, useSecondHints, useSubGrids) },
             //modifier = Modifier.fillMaxWidth()
         ) {
             Text(text = "Place your order!", fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -268,6 +290,6 @@ private fun SizeButton(size: Int, selected: Boolean, onClick: () -> Unit) {
 @Composable
 fun WelcomeScreenPreview() {
     AlphabetSoupTheme {
-        WelcomeScreen(resumableGame = null, onResume = {}, onNewGame = { _, _, _, _ -> }, onStats = {})
+        WelcomeScreen(resumableGame = null, onResume = {}, onNewGame = { _, _, _, _, _ -> }, onStats = {})
     }
 }

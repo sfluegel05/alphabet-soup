@@ -19,11 +19,11 @@ package com.example.alphabetsoup
  */
 object PuzzleSolver {
 
-    fun countSolutions(size: Int, hints: GameHints, secondHints: GameHints, maxCount: Int = 2, useDiagonals: Boolean = true): Int {
+    fun countSolutions(size: Int, hints: GameHints, secondHints: GameHints, maxCount: Int = 2, useDiagonals: Boolean = true, subGrids: Array<IntArray>? = null): Int {
         val grid = Array(size) { IntArray(size) { CELL_UNSET } }
         var count = 0
 
-        // ── constraint: value not yet present in the row/col/diagonal ──────────
+        // ── constraint: value not yet present in the row/col/diagonal/sub-grid ──
         fun canPlace(row: Int, col: Int, value: Int): Boolean {
             for (c in 0 until size)  if (c != col && grid[row][c] == value) return false
             for (r in 0 until size)  if (r != row && grid[r][col] == value) return false
@@ -32,6 +32,12 @@ object PuzzleSolver {
                     for (i in 0 until size) if (i != col && grid[i][i] == value) return false
                 if (row + col == size - 1)
                     for (i in 0 until size) if (i != row && grid[i][size - 1 - i] == value) return false
+            }
+            if (subGrids != null) {
+                val sg = subGrids[row][col]
+                for (r in 0 until size) for (c in 0 until size) {
+                    if (subGrids[r][c] == sg && (r != row || c != col) && grid[r][c] == value) return false
+                }
             }
             // check if value complies with hints
             // sort entered so far for each direction:
@@ -129,6 +135,16 @@ object PuzzleSolver {
                 if (useDiagonals) {
                     if (row == col && !canPlace(i, i, value)) remainingValues[toIndex(i, i)].remove(value)
                     if (row + col == size - 1 && !canPlace(i, size - 1 - i, value)) remainingValues[toIndex(i, size - 1 - i)].remove(value)
+                }
+            }
+            if (subGrids != null) {
+                val sg = subGrids[row][col]
+                for (r in 0 until size) for (c in 0 until size) {
+                    if (subGrids[r][c] == sg && grid[r][c] == CELL_UNSET) {
+                        for (v in remainingValues[toIndex(r, c)].toList()) {
+                            if (!canPlace(r, c, v)) remainingValues[toIndex(r, c)].remove(v)
+                        }
+                    }
                 }
             }
         }

@@ -14,7 +14,7 @@ object PuzzleGenerator {
      *  3. Hints removed one-by-one as long as the solution remains unique.
      *  4. For easier difficulties, some removed hints are restored.
      */
-    fun generateGame(size: Int, difficulty: Difficulty = Difficulty.Medium, useDiagonals: Boolean = true, useSecondHints: Boolean = false, random: Random = Random.Default): GameState {
+    fun generateGame(size: Int, difficulty: Difficulty = Difficulty.Medium, useDiagonals: Boolean = true, useSecondHints: Boolean = false, useSubGrids: Boolean = false, random: Random = Random.Default): GameState {
         var solutionUnique = false
         var fullHints: GameHints
         var secondHints: GameHints = GameHints(
@@ -24,8 +24,12 @@ object PuzzleGenerator {
             colBottom = Array(size) { null }
         )
         var solution: Array<IntArray>
+
+        // Sub-grids are fixed for the whole puzzle; regenerated only if no unique solution is found
+        var subGrids: Array<IntArray>? = if (useSubGrids) SubGridGenerator.generate(size, random) else null
+
         println("Generating solution...")
-        solution      = generateSolution(size, useDiagonals, random)
+        solution      = generateSolution(size, useDiagonals, subGrids, random)
         fullHints     = calculateHints(size, solution)
         if (useSecondHints) {
             val allSecond = calculate2ndHints(size, solution)
@@ -36,13 +40,14 @@ object PuzzleGenerator {
             }
             secondHints = selectSecondHints(allSecond, count, random)
         }
-        if (PuzzleSolver.countSolutions(size, fullHints, secondHints, maxCount = 2, useDiagonals = useDiagonals) == 1) {
+        if (PuzzleSolver.countSolutions(size, fullHints, secondHints, maxCount = 2, useDiagonals = useDiagonals, subGrids = subGrids) == 1) {
             solutionUnique = true
         }
         var attempts = 1
         while (!solutionUnique && attempts < 20) {
             println("Generating solution...")
-            solution  = generateSolution(size, useDiagonals, random)
+            if (useSubGrids) subGrids = SubGridGenerator.generate(size, random)
+            solution  = generateSolution(size, useDiagonals, subGrids, random)
             fullHints = calculateHints(size, solution)
             if (useSecondHints) {
                 val allSecond = calculate2ndHints(size, solution)
@@ -53,7 +58,7 @@ object PuzzleGenerator {
                 }
                 secondHints = selectSecondHints(allSecond, count, random)
             }
-            if (PuzzleSolver.countSolutions(size, fullHints, secondHints, maxCount = 2, useDiagonals = useDiagonals) == 1) {
+            if (PuzzleSolver.countSolutions(size, fullHints, secondHints, maxCount = 2, useDiagonals = useDiagonals, subGrids = subGrids) == 1) {
                 solutionUnique = true
             }
             attempts++
@@ -62,18 +67,18 @@ object PuzzleGenerator {
             throw IllegalStateException("Failed to generate a unique solution after $attempts attempts")
         }
         println("Removing hints...")
-        val reducedHints = removeHints(size, fullHints, secondHints, useDiagonals, random)
+        val reducedHints = removeHints(size, fullHints, secondHints, useDiagonals, subGrids, random)
         // round down to next integer
         val reAddCount = (size * difficulty.extraHintQuota).toInt()
         val finalHints    = reAddHints(fullHints, reducedHints, reAddCount, random)
         val playerGrid    = Array(size) { IntArray(size) { CELL_UNSET } }
         println("Done!")
-        return GameState(size, solution, playerGrid, finalHints, useDiagonals, secondHints)
+        return GameState(size, solution, playerGrid, finalHints, useDiagonals, secondHints, subGrids)
     }
 
     // ── 1. Solution generation ────────────────────────────────────────────────
 
-    private fun generateSolution(size: Int, useDiagonals: Boolean, random: Random): Array<IntArray> {
+    private fun generateSolution(size: Int, useDiagonals: Boolean, subGrids: Array<IntArray>?, random: Random): Array<IntArray> {
         val grid = Array(size) { IntArray(size) { CELL_UNSET } }
 
         fun canPlace(row: Int, col: Int, value: Int): Boolean {
@@ -84,6 +89,14 @@ object PuzzleGenerator {
                     for (i in 0 until row) if (grid[i][i] == value) return false
                 if (row + col == size - 1)
                     for (i in 0 until row) if (grid[i][size - 1 - i] == value) return false
+            }
+            if (subGrids != null) {
+                val sg = subGrids[row][col]
+                val pos = row * size + col
+                for (p in 0 until pos) {
+                    val r = p / size; val c = p % size
+                    if (subGrids[r][c] == sg && grid[r][c] == value) return false
+                }
             }
             return true
         }
@@ -165,7 +178,7 @@ object PuzzleGenerator {
 
     // ── 3. Hint removal ───────────────────────────────────────────────────────
 
-    private fun removeHints(size: Int, hints: GameHints, secondHints: GameHints, useDiagonals: Boolean, random: Random): GameHints {
+    private fun removeHints(size: Int, hints: GameHints, secondHints: GameHints, useDiagonals: Boolean, subGrids: Array<IntArray>?, random: Random): GameHints {
         // Collect all non-null hint positions, then shuffle for random removal order.
         val positions = mutableListOf<HintPos>()
         for (i in 0 until size) {
@@ -187,7 +200,7 @@ object PuzzleGenerator {
         for (pos in positions) {
             val saved = current.get(pos)
             current.set(pos, null)
-            if (PuzzleSolver.countSolutions(size, current, secondHints, maxCount = 2, useDiagonals = useDiagonals) != 1) {
+            if (PuzzleSolver.countSolutions(size, current, secondHints, maxCount = 2, useDiagonals = useDiagonals, subGrids = subGrids) != 1) {
                 current.set(pos, saved)   // restore: removing this hint breaks uniqueness
             }
         }

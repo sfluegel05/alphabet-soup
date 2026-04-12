@@ -6,13 +6,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -20,15 +20,15 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -37,9 +37,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sfluegel.puzzleutils.PencilMarksGrid
+import com.sfluegel.puzzleutils.PuzzleBoard
 import com.sfluegel.puzzleutils.PuzzleGridCell
 import com.sfluegel.puzzleutils.PuzzleHintCell
-import com.sfluegel.puzzleutils.PuzzleLayout
 import com.sfluegel.puzzleutils.PuzzleTopAppBar
 import com.sfluegel.puzzleutils.WavyLoadingIndicator
 import kotlinx.coroutines.Dispatchers
@@ -53,7 +53,8 @@ const val EMPTY_CELL_SYMBOL = "/"
 private class GameProgress(
     var cells: List<Int>            = emptyList(),
     var pencilMarks: List<Set<Int>> = emptyList(),
-    var history: List<Pair<List<Int>, List<Set<Int>>>> = emptyList(),
+    var notEmptyMarks: List<Boolean> = emptyList(),
+    var history: List<Triple<List<Int>, List<Set<Int>>, List<Boolean>>> = emptyList(),
     var isSolved: Boolean           = false
 )
 
@@ -61,16 +62,17 @@ private class GameProgress(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSecondHints: Boolean, onBack: () -> Unit) {
-    val context        = LocalContext.current
-    var gameState      by remember { mutableStateOf<GameState?>(null) }
-    var elapsedSeconds by remember { mutableStateOf(0L) }
-    var timerActive    by remember { mutableStateOf(false) }
+fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSecondHints: Boolean, useSubGrids: Boolean, onBack: () -> Unit) {
+    val context          = LocalContext.current
+    var gameState        by remember { mutableStateOf<GameState?>(null) }
+    var elapsedSeconds   by remember { mutableStateOf(0L) }
+    var timerActive      by remember { mutableStateOf(false) }
+    var showSolvedDialog by remember { mutableStateOf(false) }
     // Plain array so updates from SideEffect don't trigger recomposition.
-    val resetFnHolder  = remember { arrayOf<() -> Unit>({}) }
+    val resetFnHolder    = remember { arrayOf<() -> Unit>({}) }
     // Bridge object: PuzzleBoard writes its state here every recomposition so
     // GameScreen can persist it when the user navigates back.
-    val progress       = remember { GameProgress() }
+    val progress         = remember { GameProgress() }
 
     val helpText = buildString {
         val lastLetter = 'A' + size - 2
@@ -80,6 +82,7 @@ fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSeco
         append("The hints around the grid show the first letter visible when looking in from that side. " +
                "If the nearest cell is empty, the hint shows the letter behind it.\n")
         if (useSecondHints) append("Second helpings: smaller hints show the second visible letter from that direction.\n\n") else append("\n")
+        if (useSubGrids) append("Sub-grids are outlined in the grid — each region must also contain each letter exactly once.\n\n") else append("\n")
         append("Tap a cell to select it, then pick a value below the grid. Use pencil mode to stir the soup.")
     }
 
@@ -93,9 +96,11 @@ fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSeco
                     difficulty     = difficulty,
                     useDiagonals   = useDiagonals,
                     useSecondHints = useSecondHints,
+                    useSubGrids    = useSubGrids,
                     gameState      = gs,
                     cells          = progress.cells,
                     pencilMarks    = progress.pencilMarks,
+                    notEmptyMarks  = progress.notEmptyMarks,
                     elapsedSeconds = elapsedSeconds,
                     history        = progress.history
                 ))
@@ -107,15 +112,16 @@ fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSeco
         val saved = GameSave.get(size)
         if (saved != null) {
             // Restore an in-progress game.
-            progress.cells       = saved.cells
-            progress.pencilMarks = saved.pencilMarks
-            progress.history     = saved.history
-            elapsedSeconds       = saved.elapsedSeconds
-            gameState            = saved.gameState
+            progress.cells        = saved.cells
+            progress.pencilMarks  = saved.pencilMarks
+            progress.notEmptyMarks = saved.notEmptyMarks
+            progress.history      = saved.history
+            elapsedSeconds        = saved.elapsedSeconds
+            gameState             = saved.gameState
         } else {
             // Generate a fresh puzzle.
             val state = withContext(Dispatchers.Default) {
-                PuzzleGenerator.generateGame(size, difficulty, useDiagonals, useSecondHints)
+                PuzzleGenerator.generateGame(size, difficulty, useDiagonals, useSecondHints, useSubGrids)
             }
             gameState = state
         }
@@ -144,9 +150,11 @@ fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSeco
                             difficulty     = difficulty,
                             useDiagonals   = useDiagonals,
                             useSecondHints = useSecondHints,
+                            useSubGrids    = useSubGrids,
                             gameState      = gs,
                             cells          = progress.cells,
                             pencilMarks    = progress.pencilMarks,
+                            notEmptyMarks  = progress.notEmptyMarks,
                             elapsedSeconds = elapsedSeconds,
                             history        = progress.history
                         ))
@@ -179,13 +187,55 @@ fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSeco
                 )
             }
         } else {
+            // ── Solved dialog ─────────────────────────────────────────────────
+            if (showSolvedDialog) {
+                val minutes = elapsedSeconds / 60
+                val seconds = elapsedSeconds % 60
+
+                fun shareBrag() {
+                    var msg = "I have devoured a whole bowl of Alphabet Soup ($size x $size, ${DifficultySetting.emoji(difficulty)}) - and it only took me"
+                    msg += if (minutes == 0L) " $seconds seconds! Can you do better?"
+                           else               " $minutes minutes and $seconds seconds! Can you do better?"
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, msg)
+                    }
+                    context.startActivity(Intent.createChooser(intent, null))
+                }
+
+                AlertDialog(
+                    onDismissRequest = { showSolvedDialog = false },
+                    title = { Text("Delicious!") },
+                    text  = {
+                        Text(
+                            "You managed to find all the letters and make them your dinner!\n\n" +
+                            "Your time: ${minutes}m ${seconds}s"
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = ::shareBrag) { Text("Brag about this") }
+                        TextButton(onClick = onBack)      { Text("Back to Menu") }
+                    }
+                )
+            }
+
+            // ── Puzzle board ──────────────────────────────────────────────────
+            val solution   = List(size * size) { idx -> state.solution[idx / size][idx % size] }
+            val candidates = listOf(CELL_EMPTY) + (1 until size).toList()
+
             PuzzleBoard(
-                gameState       = state,
-                modifier        = Modifier.padding(innerPadding),
-                elapsedSeconds  = elapsedSeconds,
-                progress        = progress,
-                onSolved        = {
+                size                  = size,
+                solution              = solution,
+                candidates            = candidates,
+                unsetValue            = CELL_UNSET,
+                initialCells          = progress.cells,
+                initialPencilMarks    = progress.pencilMarks,
+                initialNotEmptyMarks  = progress.notEmptyMarks,
+                initialHistory        = progress.history,
+                modifier              = Modifier.padding(innerPadding),
+                onSolved              = {
                     timerActive = false
+                    GameSave.clear(size)
                     SolveHistory.add(
                         SolveRecord(
                             timestamp      = System.currentTimeMillis(),
@@ -196,265 +246,133 @@ fun GameScreen(size: Int, difficulty: Difficulty, useDiagonals: Boolean, useSeco
                             elapsedSeconds = elapsedSeconds
                         ), context
                     )
+                    showSolvedDialog = true
                 },
-                onBack          = onBack,
-                difficulty      = difficulty,
-                onRegisterReset = { fn -> resetFnHolder[0] = fn }
+                onProgressUpdate      = { cells, marks, notEmpty, hist, isSolved ->
+                    progress.cells         = cells
+                    progress.pencilMarks   = marks
+                    progress.notEmptyMarks = notEmpty
+                    progress.history       = hist
+                    progress.isSolved      = isSolved
+                },
+                onRegisterReset       = { fn -> resetFnHolder[0] = fn },
+                candidateLabel        = { candidate ->
+                    if (candidate == CELL_EMPTY) EMPTY_CELL_SYMBOL
+                    else state.letterChar(candidate).toString()
+                },
+                gridContent           = { availableWidth, availableHeight, cells, pencilMarks, notEmptyMarks, selectedCells, onSelectionChange ->
+                    AlphabetSoupGrid(
+                        state             = state,
+                        size              = size,
+                        availableWidth    = availableWidth,
+                        availableHeight   = availableHeight,
+                        cells             = cells,
+                        pencilMarks       = pencilMarks,
+                        selectedCells     = selectedCells,
+                        onSelectionChange = onSelectionChange
+                    )
+                }
             )
         }
     }
 }
 
-// ── Puzzle board with player interaction ─────────────────────────────────────
+// ── Alphabet Soup grid: hint border + cells ───────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PuzzleBoard(
-    gameState: GameState,
-    modifier: Modifier,
-    elapsedSeconds: Long,
-    progress: GameProgress,
-    onSolved: () -> Unit,
-    onBack: () -> Unit,
-    difficulty: Difficulty,
-    onRegisterReset: (() -> Unit) -> Unit
+private fun AlphabetSoupGrid(
+    state: GameState,
+    size: Int,
+    availableWidth: Dp,
+    availableHeight: Dp,
+    cells: List<Int>,
+    pencilMarks: List<Set<Int>>,
+    selectedCells: Set<Int>,
+    onSelectionChange: (Set<Int>) -> Unit
 ) {
-    val size    = gameState.size
-    val context = LocalContext.current
+    val cellSize = minOf(availableWidth / (size + 2), availableHeight / (size + 2))
+    fun hint(v: Int?) = v?.let { state.letterChar(it).toString() }
 
-    // Flat list: index = r * size + c; values: CELL_UNSET / CELL_EMPTY / 1..N-1
-    // Restored from progress when available (i.e. returning to a saved game).
-    val cells = remember(gameState) {
-        val initial = if (progress.cells.size == size * size) progress.cells
-                      else List(size * size) { CELL_UNSET }
-        mutableStateListOf(*initial.toTypedArray())
-    }
+    val subGrids = state.subGrids
+    val borderColor = MaterialTheme.colorScheme.onSurface
 
-    // Pencil marks: one Set<Int> per cell.
-    val pencilMarks = remember(gameState) {
-        val initial = if (progress.pencilMarks.size == size * size) progress.pencilMarks
-                      else List<Set<Int>>(size * size) { emptySet() }
-        mutableStateListOf(*initial.toTypedArray())
-    }
-
-    var pencilMode   by remember { mutableStateOf(false) }
-    var selectedCell by remember { mutableStateOf<Int?>(null) }  // flat index
-
-    // Values shown in the picker (EMPTY_CELL_SYMBOL first, then letters A…)
-    val allCandidates = remember(size) { listOf(CELL_EMPTY) + (1 until size).toList() }
-
-    // ── Undo history ───────────────────────────────────────────────────────
-    val history = remember(gameState) {
-        val deque = ArrayDeque<Pair<List<Int>, List<Set<Int>>>>()
-        progress.history.forEach { deque.addLast(it) }
-        deque
-    }
-
-    fun saveSnapshot() { history.addLast(cells.toList() to pencilMarks.toList()) }
-    fun undo() {
-        val (snapCells, snapMarks) = history.removeLastOrNull() ?: return
-        snapCells.forEachIndexed { i, v -> cells[i] = v }
-        snapMarks.forEachIndexed { i, v -> pencilMarks[i] = v }
-        selectedCell = null
-    }
-
-    fun tap(r: Int, c: Int) {
-        val idx = r * size + c
-        if (pencilMode) {
-            if (cells[idx] == CELL_UNSET) selectedCell = if (selectedCell == idx) null else idx
-        } else {
-            selectedCell = if (selectedCell == idx) null else idx
-        }
-    }
-
-    // Normal mode: commit a value, or clear it if the cell already has that value.
-    fun commitValue(candidate: Int) {
-        val idx = selectedCell ?: return
-        saveSnapshot()
-        cells[idx] = if (cells[idx] == candidate) CELL_UNSET else candidate
-    }
-
-    fun toggleCandidate(candidate: Int) {
-        val idx = selectedCell ?: return
-        saveSnapshot()
-        val current = pencilMarks[idx]
-        pencilMarks[idx] = if (candidate in current) current - candidate else current + candidate
-    }
-
-    val isSolved by remember {
-        derivedStateOf {
-            cells.indices.all { idx ->
-                cells[idx] == gameState.solution[idx / size][idx % size]
+    Box {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Row {
+                Spacer(Modifier.size(cellSize))
+                for (c in 0 until size) PuzzleHintCell(hint(state.hints.colTop[c]), cellSize, hint(state.secondHints.colTop[c]))
+                Spacer(Modifier.size(cellSize))
             }
-        }
-    }
-
-    // Keep the progress bridge in sync so GameScreen can persist it on back.
-    SideEffect {
-        progress.cells       = cells.toList()
-        progress.pencilMarks = pencilMarks.toList()
-        progress.history     = history.toList()
-        progress.isSolved    = isSolved
-        onRegisterReset {
-            cells.indices.forEach       { i -> cells[i]       = CELL_UNSET }
-            pencilMarks.indices.forEach { i -> pencilMarks[i] = emptySet() }
-            history.clear()
-            selectedCell = null
-        }
-    }
-
-    var showSolvedDialog by remember { mutableStateOf(false) }
-
-    // Stop the timer the instant the puzzle is solved, then show the dialog.
-    LaunchedEffect(isSolved) {
-        if (isSolved) {
-            GameSave.clear(gameState.size)   // no need to resume a finished game
-            onSolved()
-            showSolvedDialog = true
-        }
-    }
-
-    if (showSolvedDialog) {
-        val minutes = elapsedSeconds / 60
-        val seconds = elapsedSeconds % 60
-
-        fun shareBrag() {
-            var msg = "I have devoured a whole bowl of Alphabet Soup ($size x $size, ${DifficultySetting.emoji(difficulty)}) - and it only took me"
-            msg += if (minutes == 0L) " $seconds seconds! Can you do better?"
-                   else               " $minutes minutes and $seconds seconds! Can you do better?"
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, msg)
-            }
-            context.startActivity(Intent.createChooser(intent, null))
-        }
-
-        AlertDialog(
-            onDismissRequest = { showSolvedDialog = false },
-            title = { Text("Delicious!") },
-            text  = {
-                Text(
-                    "You managed to find all the letters and make them your dinner!\n\n" +
-                    "Your time: ${minutes}m ${seconds}s"
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { shareBrag() }) { Text("Brag about this") }
-                TextButton(onClick = onBack)           { Text("Back to Menu") }
-            }
-        )
-    }
-
-    PuzzleLayout(
-        modifier = modifier,
-        grid = { availableWidth, availableHeight ->
-            val cellSize = minOf(availableWidth / (size + 2), availableHeight / (size + 2))
-            fun hint(v: Int?) = v?.let { gameState.letterChar(it).toString() }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            for (r in 0 until size) {
                 Row {
-                    Spacer(Modifier.size(cellSize))
-                    for (c in 0 until size) PuzzleHintCell(hint(gameState.hints.colTop[c]), cellSize, hint(gameState.secondHints.colTop[c]))
-                    Spacer(Modifier.size(cellSize))
-                }
-                for (r in 0 until size) {
-                    Row {
-                        PuzzleHintCell(hint(gameState.hints.rowLeft[r]), cellSize, hint(gameState.secondHints.rowLeft[r]))
-                        for (c in 0 until size) {
-                            val idx = r * size + c
-                            GridCell(
-                                value      = cells[idx],
-                                size       = size,
-                                cellSize   = cellSize,
-                                marks      = pencilMarks[idx],
-                                isSelected = selectedCell == idx,
-                                onDiagonal = gameState.useDiagonals && (r == c || r + c == size - 1),
-                                gameState  = gameState,
-                                onClick    = { tap(r, c) }
-                            )
-                        }
-                        PuzzleHintCell(hint(gameState.hints.rowRight[r]), cellSize, hint(gameState.secondHints.rowRight[r]))
-                    }
-                }
-                Row {
-                    Spacer(Modifier.size(cellSize))
-                    for (c in 0 until size) PuzzleHintCell(hint(gameState.hints.colBottom[c]), cellSize, hint(gameState.secondHints.colBottom[c]))
-                    Spacer(Modifier.size(cellSize))
-                }
-            }
-        },
-        controls = {
-            val sel = selectedCell
-            Column(
-                modifier            = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // ── Value picker ───────────────────────────────────────────
-                val half = (allCandidates.size + 1) / 2
-                val pickerRows = if (size > 5) listOf(allCandidates.take(half), allCandidates.drop(half))
-                                 else          listOf(allCandidates)
-                pickerRows.forEach { rowCandidates ->
-                    Row(
-                        modifier              = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
-                    ) {
-                        rowCandidates.forEach { candidate ->
-                            val isSelected = if (sel != null && pencilMode) candidate in pencilMarks[sel]
-                                             else if (sel != null)          cells[sel] == candidate
-                                             else                           false
-                            FilterChip(
-                                selected = isSelected,
-                                onClick  = {
-                                    if (pencilMode) toggleCandidate(candidate)
-                                    else            commitValue(candidate)
-                                },
-                                label = {
-                                    Text(
-                                        if (candidate == CELL_EMPTY) EMPTY_CELL_SYMBOL
-                                        else gameState.letterChar(candidate).toString()
-                                    )
-                                },
-                                enabled = sel != null
-                            )
-                        }
-                    }
-                }
-                // ── Controls row: undo + clear + pencil toggle ────────────
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment     = Alignment.CenterVertically
-                ) {
-                    TextButton(
-                        onClick = { undo() },
-                        enabled = history.isNotEmpty()
-                    ) { Text("Undo") }
-
-                    val clearEnabled = sel != null && (cells[sel] != CELL_UNSET || pencilMarks[sel].isNotEmpty())
-                    TextButton(
-                        onClick = {
-                            val idx = sel ?: return@TextButton
-                            if (cells[idx] != CELL_UNSET) {
-                                saveSnapshot()
-                                cells[idx] = CELL_UNSET
-                            } else {
-                                saveSnapshot()
-                                pencilMarks[idx] = emptySet()
+                    PuzzleHintCell(hint(state.hints.rowLeft[r]), cellSize, hint(state.secondHints.rowLeft[r]))
+                    for (c in 0 until size) {
+                        val idx = r * size + c
+                        GridCell(
+                            value      = cells[idx],
+                            size       = size,
+                            cellSize   = cellSize,
+                            marks      = pencilMarks[idx],
+                            isSelected = idx in selectedCells,
+                            onDiagonal = state.useDiagonals && (r == c || r + c == size - 1),
+                            subGrid    = subGrids?.get(r)?.get(c),
+                            gameState  = state,
+                            onClick    = {
+                                onSelectionChange(
+                                    if (idx in selectedCells) emptySet() else setOf(idx)
+                                )
                             }
-                        },
-                        enabled = clearEnabled
-                    ) { Text("Clear") }
+                        )
+                    }
+                    PuzzleHintCell(hint(state.hints.rowRight[r]), cellSize, hint(state.secondHints.rowRight[r]))
+                }
+            }
+            Row {
+                Spacer(Modifier.size(cellSize))
+                for (c in 0 until size) PuzzleHintCell(hint(state.hints.colBottom[c]), cellSize, hint(state.secondHints.colBottom[c]))
+                Spacer(Modifier.size(cellSize))
+            }
+        }
 
-                    FilterChip(
-                        selected = pencilMode,
-                        onClick  = { pencilMode = !pencilMode },
-                        label    = { Text(if (pencilMode) "Pencil mode: ON" else "Pencil mode: OFF") }
-                    )
+        // Draw thick borders between cells that belong to different sub-grids
+        if (subGrids != null) {
+            Canvas(Modifier.matchParentSize()) {
+                val cp = cellSize.toPx()
+                val strokeW = 3.dp.toPx()
+                for (r in 0 until size) {
+                    for (c in 0 until size) {
+                        // Vertical border to the right of (r, c)
+                        if (c < size - 1 && subGrids[r][c] != subGrids[r][c + 1]) {
+                            drawLine(
+                                color       = borderColor,
+                                start       = Offset((c + 2) * cp, (r + 1) * cp),
+                                end         = Offset((c + 2) * cp, (r + 2) * cp),
+                                strokeWidth = strokeW
+                            )
+                        }
+                        // Horizontal border below (r, c)
+                        if (r < size - 1 && subGrids[r][c] != subGrids[r + 1][c]) {
+                            drawLine(
+                                color       = borderColor,
+                                start       = Offset((c + 1) * cp, (r + 2) * cp),
+                                end         = Offset((c + 2) * cp, (r + 2) * cp),
+                                strokeWidth = strokeW
+                            )
+                        }
+                    }
                 }
             }
         }
-    )
+    }
 }
 
 // ── Game-specific cell wrapper ────────────────────────────────────────────────
+
+// Soft pastel tints used as sub-grid colour overlays (cycles for >8 sub-grids)
+private val SUB_GRID_TINTS = listOf(
+    Color(0x14E57373), Color(0x1481C784), Color(0x1464B5F6), Color(0x14FFD54F),
+    Color(0x14BA68C8), Color(0x1426C6DA), Color(0x14FF8A65), Color(0x14A1887F)
+)
 
 @Composable
 private fun GridCell(
@@ -464,6 +382,7 @@ private fun GridCell(
     marks: Set<Int>,
     isSelected: Boolean,
     onDiagonal: Boolean,
+    subGrid: Int?,
     gameState: GameState,
     onClick: () -> Unit
 ) {
@@ -472,11 +391,19 @@ private fun GridCell(
         CELL_EMPTY -> MaterialTheme.colorScheme.surfaceVariant
         else       -> MaterialTheme.colorScheme.primaryContainer
     }
-    val bgColor = if (onDiagonal) lerp(baseColor, MaterialTheme.colorScheme.tertiary, 0.12f) else baseColor
+    var bgColor = if (onDiagonal) lerp(baseColor, MaterialTheme.colorScheme.tertiary, 0.12f) else baseColor
+    if (subGrid != null) {
+        val tint = SUB_GRID_TINTS[subGrid % SUB_GRID_TINTS.size]
+        bgColor = Color(
+            red   = bgColor.red   * (1 - tint.alpha) + tint.red   * tint.alpha,
+            green = bgColor.green * (1 - tint.alpha) + tint.green * tint.alpha,
+            blue  = bgColor.blue  * (1 - tint.alpha) + tint.blue  * tint.alpha,
+            alpha = bgColor.alpha
+        )
+    }
 
     PuzzleGridCell(cellSize = cellSize, isSelected = isSelected, backgroundColor = bgColor, onClick = onClick) {
         when {
-            // Pencil marks are only shown while the cell has no committed value
             value == CELL_UNSET && marks.isNotEmpty() -> {
                 val candidates = listOf(CELL_EMPTY) + (1 until size).toList()
                 val labels = candidates.map { c ->

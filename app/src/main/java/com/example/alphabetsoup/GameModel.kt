@@ -54,7 +54,9 @@ class GameState(
         rowRight  = Array(size) { null },
         colTop    = Array(size) { null },
         colBottom = Array(size) { null }
-    )
+    ),
+    /** null = sub-grids not in use; otherwise assignment[r][c] = sub-grid index 0..size-1 */
+    val subGrids: Array<IntArray>? = null
 ) {
     /** Convert a letter index (1..size-1) to its display character. */
     fun letterChar(index: Int): Char = 'A' + (index - 1)
@@ -66,11 +68,13 @@ data class SavedGame(
     val difficulty: Difficulty,
     val useDiagonals: Boolean,
     val useSecondHints: Boolean,
+    val useSubGrids: Boolean,
     val gameState: GameState,
     val cells: List<Int>,
     val pencilMarks: List<Set<Int>>,
+    val notEmptyMarks: List<Boolean>,
     val elapsedSeconds: Long,
-    val history: List<Pair<List<Int>, List<Set<Int>>>>
+    val history: List<Triple<List<Int>, List<Set<Int>>, List<Boolean>>>
 )
 
 data class SolveRecord(
@@ -126,6 +130,15 @@ object SecondHintsSetting : GameSetting<Boolean>(
     defaultIndex = 1
 )
 
+object SubGridsSetting : GameSetting<Boolean>(
+    name = "Sub-grids",
+    options = listOf(
+        SettingOption(true,  label = "Sub-grids", emoji = "⊞"),
+        SettingOption(false, label = "No sub-grids", emoji = ""),
+    ),
+    defaultIndex = 1
+)
+
 // ── Save slots ────────────────────────────────────────────────────────────────
 
 /** In-memory save slots, one per grid size. Tracks the most-recently saved slot. */
@@ -136,8 +149,11 @@ object GameSave : SaveStore<Int, SavedGame>({ it.size }) {
         private set
     var lastUseSecondHints: Boolean = SecondHintsSetting.default.value
         private set
+    var lastUseSubGrids: Boolean = SubGridsSetting.default.value
+        private set
 
     fun recordDifficulty(d: Difficulty) { lastDifficulty = d }
     fun recordUseDiagonals(v: Boolean)   { lastUseDiagonals   = v }
     fun recordUseSecondHints(v: Boolean) { lastUseSecondHints = v }
+    fun recordUseSubGrids(v: Boolean)    { lastUseSubGrids    = v }
 }
